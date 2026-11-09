@@ -226,7 +226,7 @@ class ExportReportPptx(ExportBasePptx, ExportReportBase, ProjectSlidesMixin):
             text_frame = notes_slide.notes_text_frame
             p = text_frame.add_paragraph()
             p.text = f"""
-                {finding["severity"].capitalize()}: finding["title"]
+                {finding["severity"].capitalize()}: {finding["title"]}
 
                 AFFECTED ENTITIES
                 {entities}
@@ -244,7 +244,6 @@ class ExportReportPptx(ExportBasePptx, ExportReportBase, ProjectSlidesMixin):
                 {host_detection}
 
                 NETWORK DETECTION
-                ,
                 {net_detection}
 
                 REFERENCES

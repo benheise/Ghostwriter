@@ -10,6 +10,7 @@ from django.conf import settings
 # 3rd Party Libraries
 import docx
 from docx.document import Document as DocumentObject
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_COLOR_INDEX
 from docx.image.exceptions import UnrecognizedImageError
 from docx.oxml.shared import OxmlElement, qn
@@ -43,6 +44,21 @@ EVIDENCE_IMAGE_ALIGNMENT_MAP = {
 WORD_BOOKMARK_BASE_NAME_MAX_LENGTH = 36
 WORD_BOOKMARK_INVALID_CHARACTERS = re.compile(r"[^A-Za-z0-9_]")
 _PARAGRAPH_STYLE_UNSET = object()
+
+
+def find_style(styles, name, style_type):
+    """
+    Return the style of ``style_type`` named ``name``, comparing names case-insensitively, or ``None``.
+
+    Word saves some built-in styles under lower-case names (``footnote text``, ``footnote reference``)
+    that python-docx does not translate to their UI names, so an exact lookup misses them in templates
+    authored in Word.
+    """
+    wanted = name.lower()
+    for style in styles:
+        if style.type == style_type and (style.name or "").lower() == wanted:
+            return style
+    return None
 
 
 def normalize_bookmark_name(name: str) -> str:
@@ -367,18 +383,23 @@ class HtmlToDocx(BaseHtmlToOOXML):
         # This is required for Word to properly display the footnote number
         footnote_paragraph = new_footnote.add_paragraph()
 
-        # Check if required styles exist in the template
-        has_footnote_text_style = "Footnote Text" in self.doc.styles
-        has_footnote_ref_style = "Footnote Reference" in self.doc.styles
+        # Look up the template's footnote styles; Word stores them as "footnote text" and
+        # "footnote reference", so match names case-insensitively
+        footnote_text_style = find_style(
+            self.doc.styles, "Footnote Text", WD_STYLE_TYPE.PARAGRAPH
+        )
+        footnote_ref_style = find_style(
+            self.doc.styles, "Footnote Reference", WD_STYLE_TYPE.CHARACTER
+        )
 
         # Apply paragraph style if available
-        if has_footnote_text_style:
-            footnote_paragraph.style = "Footnote Text"
+        if footnote_text_style is not None:
+            footnote_paragraph.style = footnote_text_style
 
         # Create footnote reference run with style if available
-        if has_footnote_ref_style:
+        if footnote_ref_style is not None:
             footnote_ref_run = footnote_paragraph.add_run()
-            footnote_ref_run.style = "Footnote Reference"
+            footnote_ref_run.style = footnote_ref_style
             footnote_ref_run.font.superscript = True
             footnote_ref_element = OxmlElement("w:footnoteRef")
             footnote_ref_run._r.append(footnote_ref_element)
@@ -396,13 +417,11 @@ class HtmlToDocx(BaseHtmlToOOXML):
             footnote_ref_element = OxmlElement("w:footnoteRef")
             footnote_ref_run.append(footnote_ref_element)
 
-        # Add a space and the footnote text with "Footnote Text" character style
-        text_run = footnote_paragraph.add_run(" " + footnote_content)
-        if has_footnote_text_style:
-            text_run.style = "Footnote Text"
+        # Add a space and the footnote text; the paragraph's "Footnote Text" style formats it
+        footnote_paragraph.add_run(" " + footnote_content)
 
         # Apply fallback formatting if either style is missing
-        if not has_footnote_text_style or not has_footnote_ref_style:
+        if footnote_text_style is None or footnote_ref_style is None:
             pf = footnote_paragraph.paragraph_format
             pf.line_spacing = 1.0
             pf.space_before = 0

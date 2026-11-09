@@ -913,8 +913,8 @@ class ReportConfigurationFactory(factory.django.DjangoModelFactory):
     prefix_table = Faker("word")
     label_table = Faker("word")
     table_caption_location = "top"
-    report_filename = '{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.project_type}} Report'
-    project_filename = '{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.project_type}} Report'
+    report_filename = '{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.type}} Report'
+    project_filename = '{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.type}} Report'
     title_case_captions = False
     title_case_exceptions = str(Faker("csv"))[:255]
     target_delivery_date = Faker("pyint")

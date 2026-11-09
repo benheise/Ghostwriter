@@ -7,6 +7,7 @@ import tempfile
 from django.test import SimpleTestCase
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 
 from ghostwriter.modules.reportwriter.richtext.docx import HtmlToDocx
 
@@ -298,3 +299,33 @@ class FootnoteRichTextConversionTests(SimpleTestCase):
         reopened_doc = Document(output_path)
         actual_footnotes = [fn for fn in reopened_doc.footnotes if fn.id > 0]
         self.assertEqual(len(actual_footnotes), 4, "Expected 4 footnotes in the document")
+
+
+class FootnoteStyleTests(SimpleTestCase):
+    """Test that template footnote styles are applied whatever case their names use."""
+
+    html = '<p>Body text<span class="footnote">The footnote</span></p>'
+
+    def _footnote_paragraph(self, text_style_name, ref_style_name):
+        doc = Document()
+        doc.styles.add_style(text_style_name, WD_STYLE_TYPE.PARAGRAPH)
+        doc.styles.add_style(ref_style_name, WD_STYLE_TYPE.CHARACTER)
+        HtmlToDocx.run(self.html, doc, None)
+        footnote = [fn for fn in doc.footnotes if fn.id > 0][0]
+        return footnote.paragraphs[0]
+
+    def test_word_lowercase_style_names_are_applied(self):
+        """Word saves the built-in styles as "footnote text" and "footnote reference"."""
+        paragraph = self._footnote_paragraph("footnote text", "footnote reference")
+
+        self.assertEqual(paragraph.style.name, "footnote text")
+        self.assertEqual(paragraph.runs[0].style.name, "footnote reference")
+        self.assertEqual(paragraph.text.strip(), "The footnote")
+
+    def test_title_case_style_names_are_applied(self):
+        """A paragraph style named "Footnote Text" is applied to the paragraph, not to a run."""
+        paragraph = self._footnote_paragraph("Footnote Text", "Footnote Reference")
+
+        self.assertEqual(paragraph.style.name, "Footnote Text")
+        self.assertEqual(paragraph.runs[0].style.name, "Footnote Reference")
+        self.assertEqual(paragraph.text.strip(), "The footnote")

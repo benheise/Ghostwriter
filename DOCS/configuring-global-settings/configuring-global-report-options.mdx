@@ -39,19 +39,21 @@ The filenames can be generic or include placeholders to create dynamic filenames
   <img src="/images/configuring-global-settings/image-4.avif" alt=""/>
 </Frame>
 
-Filenames can use the following placeholder strings or [date formatting characters](https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#date):
+Filenames are Jinja2 templates. They can use any variable available to report templates, plus `{{now}}` (the
+time of the download) and `{{company_name}}`. Commonly used values:
 
-| **Placeholder**      | **Description**                                                                                                                                         |
-|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `{date}`             | The current date formatted with your [configured date format](https://www.ghostwriter.wiki/getting-started/quickstart#customizing-the-date-format).     |
-| `{client}`           | The name of the client associated with the project.                                                                                                    |
-| `{company}`          | Your configured company name ([Company Information](/configuring-global-settings/personalizing-company-information)).                                  |
-| `{assessment_type}`  | The assessment type set for the project.
+| **Variable**                              | **Description**                                                                                                       |
+|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| `{{now\|format_datetime("Y-m-d_His")}}`   | The current date and time, formatted with [date formatting characters](https://docs.djangoproject.com/en/4.1/ref/templates/builtins/#date). |
+| `{{client.name}}`                         | The name of the client associated with the project.                                                                   |
+| `{{company.name}}`                        | Your configured company name ([Company Information](/configuring-global-settings/personalizing-company-information)). |
+| `{{project.type}}`                        | The project type set for the project.                                                                                 |
+| `{{title}}`                               | The report's title (report downloads only).                                                                           |
 
 <Check>
 The default filename value is a good example of using these dynamic elements. The default value is:
 
-`{Y-m-d`}`_{His} {company} - {client} {assessment_type} Report`
+`{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.type}} Report`
 
 That translates into a string like this:
 

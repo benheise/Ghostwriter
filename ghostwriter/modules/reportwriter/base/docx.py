@@ -476,7 +476,7 @@ class ExportDocxBase(ExportBase):
                     if style == "footnote text":
                         if document_styles[style].type != WD_STYLE_TYPE.PARAGRAPH:
                             warnings.append(
-                                "Footnote Text style is not a character style (see documentation)"
+                                "Footnote Text style is not a paragraph style (see documentation)"
                             )
                     if style == "footnote reference":
                         if document_styles[style].type != WD_STYLE_TYPE.CHARACTER:

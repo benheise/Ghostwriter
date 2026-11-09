@@ -1,14 +1,20 @@
 """Regression tests for report and project exporter initialization."""
 
 # Standard Libraries
+import io
 import json
 from unittest.mock import Mock
 
 # Django Imports
 from django.test import SimpleTestCase, TestCase
 
+# 3rd Party Libraries
+import docx
+import pptx
+
 # Ghostwriter Libraries
-from ghostwriter.factories import ReportFactory
+from ghostwriter.commandcenter.models import ReportConfiguration
+from ghostwriter.factories import ReportFactory, ReportFindingLinkFactory
 from ghostwriter.modules.reportwriter.base.base import ExportBase
 from ghostwriter.modules.reportwriter.project.docx import ExportProjectDocx
 from ghostwriter.modules.reportwriter.project.json import ExportProjectJson
@@ -127,6 +133,57 @@ class ConcreteExporterInitializationTests(TestCase):
         )
 
         self.assertEqual(exporter.render_filename(filename_template), "safe.json")
+
+    def test_default_filenames_include_project_type(self):
+        project_type = str(self.project.project_type)
+        report_default = ReportConfiguration._meta.get_field("report_filename").default
+        project_default = ReportConfiguration._meta.get_field(
+            "project_filename"
+        ).default
+
+        report_name = ExportReportJson(self.report).render_filename(report_default)
+        project_name = ExportProjectJson(self.project).render_filename(project_default)
+
+        self.assertIn(f" {project_type} Report.json", report_name)
+        self.assertIn(f" {project_type} Report.json", project_name)
+
+    def test_default_docx_template_prints_finding_severity(self):
+        finding = ReportFindingLinkFactory(
+            report=self.report, title="Severity Line Finding"
+        )
+        exporter = ExportReportDocx(
+            self.report, report_template=self.report.docx_template
+        )
+
+        document = docx.Document(io.BytesIO(exporter.run().getvalue()))
+        severity_lines = [
+            p.text for p in document.paragraphs if p.text.startswith("Severity –")
+        ]
+
+        self.assertIn(f"Severity – {finding.severity.severity}", severity_lines)
+
+    def test_report_pptx_finding_notes_name_the_finding(self):
+        finding = ReportFindingLinkFactory(
+            report=self.report, title="Notes Title Finding"
+        )
+        exporter = ExportReportPptx(
+            self.report, report_template=self.report.pptx_template
+        )
+
+        deck = pptx.Presentation(io.BytesIO(exporter.run().getvalue()))
+        slide = next(
+            s
+            for s in deck.slides
+            if s.shapes.title is not None
+            and s.shapes.title.text.startswith(finding.title)
+        )
+        notes = slide.notes_slide.notes_text_frame.text
+
+        self.assertIn(
+            f"{finding.severity.severity.capitalize()}: {finding.title}", notes
+        )
+        self.assertNotIn('finding["title"]', notes)
+        self.assertNotIn(",", [line.strip() for line in notes.splitlines()])
 
     def test_project_exporters_initialize_with_project_data(self):
         exporters = [

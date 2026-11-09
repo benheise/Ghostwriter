@@ -82,3 +82,55 @@ class ExtraFieldSpecPositionMigrationTests(TransactionTestCase):
             ),
             [("report_first", 1)],
         )
+
+
+class ReportFilenameProjectTypeMigrationTests(TransactionTestCase):
+    """Verify the filename migration replaces the undefined ``project.project_type`` variable."""
+
+    migrate_from = [("commandcenter", "0054_generalconfiguration_token_lifecycle")]
+    migrate_to = [("commandcenter", "0055_reportconfiguration_filename_project_type")]
+
+    old_default = '{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.project_type}} Report'
+    new_default = '{{now|format_datetime("Y-m-d_His")}} {{company.name}} - {{client.name}} {{project.type}} Report'
+
+    def setUp(self):
+        super().setUp()
+        self.executor = MigrationExecutor(connection)
+        self.executor.migrate(self.migrate_from)
+        old_apps = self.executor.loader.project_state(self.migrate_from).apps
+        ReportConfiguration = old_apps.get_model("commandcenter", "ReportConfiguration")
+        config, _ = ReportConfiguration.objects.get_or_create(pk=1)
+        config.report_filename = self.old_default
+        config.project_filename = "{{ project.project_type }} {{title}}"
+        config.save()
+
+        self.executor = MigrationExecutor(connection)
+        self.executor.migrate(self.migrate_to)
+        self.apps = self.executor.loader.project_state(self.migrate_to).apps
+
+    def tearDown(self):
+        restore_latest_migrations()
+        super().tearDown()
+
+    def test_migration_replaces_project_type_variable(self):
+        ReportConfiguration = self.apps.get_model(
+            "commandcenter", "ReportConfiguration"
+        )
+        config = ReportConfiguration.objects.get(pk=1)
+
+        self.assertEqual(config.report_filename, self.new_default)
+        self.assertEqual(config.project_filename, "{{project.type}} {{title}}")
+
+    def test_new_default_uses_project_type(self):
+        ReportConfiguration = self.apps.get_model(
+            "commandcenter", "ReportConfiguration"
+        )
+
+        self.assertEqual(
+            ReportConfiguration._meta.get_field("report_filename").default,
+            self.new_default,
+        )
+        self.assertEqual(
+            ReportConfiguration._meta.get_field("project_filename").default,
+            self.new_default,
+        )

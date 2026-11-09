@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+* Fixed the severity under each finding in the default Word template being blank; the template now prints `severity_rt` with the `{{r ... }}` rich-text tag
+* Fixed the default report and project download filenames omitting the project type; they referred to `project.project_type`, which is not in the report context, and now use `project.type` (a migration updates saved filenames that use the old variable)
+* Fixed template footnote styles never being applied when a Word template names them `footnote text` and `footnote reference`, and report generation failing when a template names the paragraph style `Footnote Text`; the template linter now also describes Footnote Text as a paragraph style
+* Fixed PowerPoint finding notes starting with the literal text `finding["title"]` instead of the finding's title, and a stray comma under the network detection heading
+
 ## [7.3.5] - 19 November 2026
 
 ### Fixed
