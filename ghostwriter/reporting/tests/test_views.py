@@ -1122,7 +1122,8 @@ class FindingsListViewTests(TestCase):
         self.assertContains(response, "library-table library-table-wide finding-library-table")
         self.assertContains(response, 'class="column-picker-toggle collapsed"')
         self.assertContains(response, "library-filter-boolean", count=2)
-        self.assertContains(response, 'data-1p-ignore="true"', count=2)
+        # Title, tag, and CVE text filters
+        self.assertContains(response, 'data-1p-ignore="true"', count=3)
         self.assertNotContains(response, "btn btn-info col-2")
 
     def test_custom_context_exists(self):
@@ -5950,6 +5951,7 @@ class GenerateReportTests(TestCase):
             "Severity",
             "CVSS Score",
             "CVSS Vector",
+            "CVE IDs",
             "Affected Entities",
             "Description",
             "Impact",
@@ -5968,6 +5970,22 @@ class GenerateReportTests(TestCase):
         self.assertEqual(headers[: len(expected_headers)], expected_headers)
         self.assertEqual(
             finding_row[headers.index("Supporting Evidence")], evidence.friendly_name
+        )
+
+    def test_view_xlsx_includes_cve_ids(self):
+        finding = ReportFindingLinkFactory(
+            report=self.report,
+            title="Finding with CVE IDs",
+            cves=["CVE-2021-45046", "CVE-2021-44228"],
+        )
+        response = self.client_mgr.get(self.xlsx_uri)
+        self.assertEqual(response.status_code, 200, response.content)
+
+        rows = self._xlsx_rows(response)
+        headers = rows[0]
+        finding_row = next(row for row in rows[1:] if row[0] == finding.title)
+        self.assertEqual(
+            finding_row[headers.index("CVE IDs")], "CVE-2021-44228, CVE-2021-45046"
         )
 
     def test_view_xlsx_prepares_supporting_evidence_names_once(self):

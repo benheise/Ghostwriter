@@ -377,6 +377,7 @@ LINTER_CONTEXT = {
             "cvss_score_rt": "",
             "cvss_vector": "",
             "cvss_vector_rt": "",
+            "cves": ["CVE-2021-44228"],
             "severity_color": "966FD6",
             "severity_color_rgb": [150, 111, 214],
             "severity_color_hex": ["0x96", "0x6f", "0xd6"],

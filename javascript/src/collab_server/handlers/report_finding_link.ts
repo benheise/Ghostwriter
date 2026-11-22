@@ -3,6 +3,7 @@ import { simpleModelHandler } from "../base_handler";
 import * as Y from "yjs";
 import { htmlToYjs, tagsToYjs, yjsToHtml, yjsToTags } from "../yjs_converters";
 import { extraFieldsFromYdoc, extraFieldsToYdoc } from "../extra_fields";
+import { cleanCves, cvesToJsonb } from "../../services/cve";
 
 const GET = gql(`
     query GET_REPORT_FINDING_LINK($id: bigint!) {
@@ -18,6 +19,7 @@ const GET = gql(`
             findingGuidance,
             cvssScore,
             cvssVector,
+            cves,
             severity { id },
             findingTypeId,
             affectedEntities,
@@ -85,6 +87,7 @@ const ReportFindingLinkHandler = simpleModelHandler(
             doc.get("affectedEntities", Y.XmlFragment)
         );
         tagsToYjs(res.tags.tags, doc.get("tags", Y.Map<boolean>));
+        tagsToYjs(cleanCves(obj.cves), doc.get("cves", Y.Map<boolean>));
         extraFieldsToYdoc(res.extraFieldSpec, doc, obj.extraFields);
         return res.extraFieldSpec;
     },
@@ -97,6 +100,9 @@ const ReportFindingLinkHandler = simpleModelHandler(
                 title: plainFields.get("title") ?? "",
                 cvssScore: plainFields.get("cvssScore") ?? null,
                 cvssVector: plainFields.get("cvssVector") ?? "",
+                cves: cvesToJsonb(
+                    cleanCves(yjsToTags(doc.get("cves", Y.Map<boolean>)))
+                ),
                 findingTypeId: plainFields.get("findingTypeId"),
                 severityId: plainFields.get("severityId"),
 

@@ -20,7 +20,11 @@ from taggit.managers import TaggableManager
 
 # Ghostwriter Libraries
 from ghostwriter.modules.reportwriter.base import ReportExportTemplateError
-from ghostwriter.reporting.validators import validate_evidence_extension
+from ghostwriter.reporting.validators import (
+    clean_cves,
+    validate_cve_list,
+    validate_evidence_extension,
+)
 
 # Using __name__ resolves to ghostwriter.reporting.models
 logger = logging.getLogger(__name__)
@@ -243,6 +247,13 @@ class Finding(models.Model):
         max_length=255,
         help_text="Set the CVSS vector for this finding",
     )
+    cves = models.JSONField(
+        "CVE IDs",
+        default=list,
+        blank=True,
+        validators=[validate_cve_list],
+        help_text="List the CVE identifiers this finding covers, such as CVE-2021-44228",
+    )
     tags = TaggableManager(blank=True)
     # Foreign Keys
     severity = models.ForeignKey(
@@ -270,6 +281,16 @@ class Finding(models.Model):
 
     def get_edit_url(self):
         return reverse("reporting:finding_update", kwargs={"pk": self.pk})
+
+    def save(self, *args, **kwargs):
+        # Store CVE identifiers in one form, whichever path wrote them
+        self.cves = clean_cves(self.cves)
+        super().save(*args, **kwargs)
+
+    @property
+    def cve_ids(self) -> list:
+        """The valid CVE identifiers, ignoring malformed values written outside Django."""
+        return clean_cves(self.cves)
 
     @classmethod
     def user_can_create(cls, user) -> bool:
@@ -866,6 +887,13 @@ class ReportFindingLink(models.Model):
         max_length=255,
         help_text="Set the CVSS vector for this finding",
     )
+    cves = models.JSONField(
+        "CVE IDs",
+        default=list,
+        blank=True,
+        validators=[validate_cve_list],
+        help_text="List the CVE identifiers this finding covers, such as CVE-2021-44228",
+    )
     extra_fields = models.JSONField(default=dict)
 
     class Meta:
@@ -882,6 +910,16 @@ class ReportFindingLink(models.Model):
 
     def get_edit_url(self):
         return reverse("reporting:local_edit", kwargs={"pk": self.pk})
+
+    def save(self, *args, **kwargs):
+        # Store CVE identifiers in one form, whichever path wrote them
+        self.cves = clean_cves(self.cves)
+        super().save(*args, **kwargs)
+
+    @property
+    def cve_ids(self) -> list:
+        """The valid CVE identifiers, ignoring malformed values written outside Django."""
+        return clean_cves(self.cves)
 
     @property
     def display_title(self) -> str:

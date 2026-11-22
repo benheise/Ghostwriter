@@ -130,6 +130,7 @@ class FindingAdmin(ImportExportMixin, CollabAdminBase):
                     "severity",
                     "cvss_score",
                     "cvss_vector",
+                    "cves",
                     "tags",
                 )
             },
@@ -216,6 +217,7 @@ class ReportFindingLinkAdmin(CollabAdminBase):
                     "severity",
                     "cvss_score",
                     "cvss_vector",
+                    "cves",
                     "tags",
                 )
             },

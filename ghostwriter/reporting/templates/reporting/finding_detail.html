@@ -11,7 +11,7 @@
       <div class="detail-page-heading-main finding-detail-heading-main">
         <span class="detail-eyebrow">Finding</span>
         <h2 class="mb-0">{{ finding.display_title }}</h2>
-        <div class="detail-tag-list finding-detail-tags" aria-label="Finding severity, type, and tags">
+        <div class="detail-tag-list finding-detail-tags" aria-label="Finding severity, type, CVE IDs, and tags">
           <span class="library-tag finding-severity-badge finding-severity-{{ finding.severity.severity|slugify }}"
             {% if finding.cvss_vector %}data-bs-toggle="tooltip" data-bs-placement="bottom"
               title="CVSS Vector: {{ finding.cvss_vector }}"{% endif %}>
@@ -30,6 +30,12 @@
               {% else %}fa-bug{% endif %}" aria-hidden="true"></i>
             <span>{{ finding.finding_type.finding_type }}</span>
           </span>
+          {% for cve in finding.cve_ids %}
+            <span class="library-tag library-tag-neutral finding-cve-badge" title="CVE ID">
+              <i class="fas fa-bug" aria-hidden="true"></i>
+              <span>{{ cve }}</span>
+            </span>
+          {% endfor %}
           {% for tag in finding.tags.names %}
             <span class="library-tag library-tag-neutral">{{ tag|bleach }}</span>
           {% endfor %}

@@ -2,6 +2,7 @@
 
 # Django Imports
 from django import forms
+from django.db.models import Q
 from django.forms.widgets import TextInput
 from django.utils.html import format_html
 
@@ -14,6 +15,7 @@ from crispy_forms.layout import HTML, ButtonHolder, Column, Div, Layout, Row, Su
 # Ghostwriter Libraries
 from ghostwriter.modules.custom_layout_object import SwitchToggle
 from ghostwriter.modules.shared import search_tags
+from ghostwriter.reporting.validators import CVE_ID_PATTERN, CVE_ID_SEPARATORS
 from ghostwriter.reporting.models import (
     Archive,
     Finding,
@@ -27,6 +29,7 @@ from ghostwriter.reporting.models import (
 FILE_ICON = format_html('<i class="fas fa-file-alt"></i>')
 FILTER_ICON = format_html('<i class="fas fa-filter"></i>')
 TAG_ICON = format_html('<i class="fas fa-tag"></i>')
+BUG_ICON = format_html('<i class="fas fa-bug"></i>')
 TOGGLE_ICON = format_html('<i class="fas fa-toggle-on"></i>')
 
 
@@ -44,6 +47,8 @@ class FindingFilter(django_filters.FilterSet):
         Multiple choice filter using :model:`reporting.FindingType`.
     ``tags``
         Search of the tags field contents.
+    ``cve``
+        Search of the CVE identifiers, by full identifier or part of one.
      ``on_reports``
         Boolean field to filter findings on reports.
      ``not_cloned``
@@ -77,6 +82,18 @@ class FindingFilter(django_filters.FilterSet):
         widget=TextInput(
             attrs={
                 "placeholder": "Finding Tag",
+                "autocomplete": "off",
+                "data-1p-ignore": "true",
+            }
+        ),
+    )
+
+    cve = django_filters.CharFilter(
+        method="search_cves",
+        label="CVE IDs Contain",
+        widget=TextInput(
+            attrs={
+                "placeholder": "CVE-2021-44228",
                 "autocomplete": "off",
                 "data-1p-ignore": "true",
             }
@@ -125,11 +142,15 @@ class FindingFilter(django_filters.FilterSet):
                         Row(
                             Column(
                                 PrependedText("title", FILTER_ICON),
-                                css_class="col-md-6 mb-3",
+                                css_class="col-md-4 mb-3",
                             ),
                             Column(
                                 PrependedText("tags", TAG_ICON),
-                                css_class="col-md-6 mb-3",
+                                css_class="col-md-4 mb-3",
+                            ),
+                            Column(
+                                PrependedText("cve", BUG_ICON),
+                                css_class="col-md-4 mb-3",
                             ),
                             css_class="row g-3",
                         ),
@@ -183,6 +204,22 @@ class FindingFilter(django_filters.FilterSet):
     def search_tags(self, queryset, name, value):
         """Filter findings by tags."""
         return search_tags(queryset, value)
+
+    def search_cves(self, queryset, name, value):
+        """
+        Filter findings by CVE identifiers. A full identifier must match exactly and part of one
+        matches as a substring. Separate several with commas or spaces to match any of them.
+        """
+        query = Q()
+        for term in CVE_ID_SEPARATORS.split(value.strip()):
+            if not term:
+                continue
+            term = term.upper()
+            if CVE_ID_PATTERN.match(term):
+                query |= Q(cves__contains=[term])
+            else:
+                query |= Q(cves__icontains=term)
+        return queryset.filter(query) if query else queryset
 
 
 class ObservationFilter(django_filters.FilterSet):

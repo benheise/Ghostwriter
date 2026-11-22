@@ -67,7 +67,9 @@ class FindingListView(RoleBasedAccessControlMixin, ListView):
                 extra_tags="alert-success",
             )
             findings = findings.filter(
-                Q(title__icontains=search_term) | Q(description__icontains=search_term)
+                Q(title__icontains=search_term)
+                | Q(description__icontains=search_term)
+                | Q(cves__icontains=search_term)
             )
         findings = findings.order_by("severity__weight", "-cvss_score", "finding_type", "title")
         return findings
@@ -163,6 +165,7 @@ class ConvertFinding(RoleBasedAccessControlMixin, SingleObjectMixin, View):
             finding_type=rfl.finding_type,
             cvss_score=rfl.cvss_score,
             cvss_vector=rfl.cvss_vector,
+            cves=list(rfl.cves),
             extra_fields=rfl.extra_fields,
         )
         finding.save()

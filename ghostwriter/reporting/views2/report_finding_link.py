@@ -95,6 +95,7 @@ class AssignFinding(RoleBasedAccessControlMixin, SingleObjectMixin, View):
             finding_type=finding.finding_type,
             cvss_score=finding.cvss_score,
             cvss_vector=finding.cvss_vector,
+            cves=list(finding.cves),
             extra_fields=finding.extra_fields,
 
             assigned_to=self.request.user,

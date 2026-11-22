@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* Added a CVE IDs field to library findings and report findings
+  * Findings store a validated list of CVE identifiers, which is copied when a finding is added to a report or a report finding is cloned to the library
+  * The collaborative finding forms have a CVE IDs editor that upper-cases entries and ignores anything that is not a CVE identifier
+  * The IDs are available to report templates as `finding.cves`, in the JSON and Excel reports, in finding CSV imports and exports as a `cves` column, and through the GraphQL API
+  * The findings library can be filtered and searched by CVE ID, shows the IDs on finding pages, and offers a hidden-by-default CVE IDs table column
+  * The new `extract_cves` management command fills the field from CVE identifiers already written in findings' text
+
 ### Fixed
 
 * Fixed the severity under each finding in the default Word template being blank; the template now prints `severity_rt` with the `{{r ... }}` rich-text tag

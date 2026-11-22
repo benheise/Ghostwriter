@@ -77,6 +77,7 @@ insert_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -117,6 +118,7 @@ insert_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -141,6 +143,7 @@ select_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -166,6 +169,7 @@ select_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -196,6 +200,7 @@ select_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -235,6 +240,7 @@ update_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -260,6 +266,7 @@ update_permissions:
         - complete
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance

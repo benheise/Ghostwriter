@@ -1,4 +1,4 @@
-/// Tag editor.
+/// Tag editor, also used for other string lists such as CVE identifiers.
 
 import * as Y from "yjs";
 import Tagify from "@yaireo/tagify";
@@ -12,7 +12,18 @@ export function TagEditor(props: {
     docKey: string;
     id?: string;
     className?: string;
+    /// Placeholder text shown when the list is empty
+    placeholder?: string;
+    /// Only entries matching this pattern, after `transform`, are kept
+    pattern?: RegExp;
+    /// Normalizes an entry before it is checked and stored
+    transform?: (value: string) => string;
+    /// Regular expression source for the characters that separate entries
+    delimiters?: string;
 }) {
+    const isValid = (value: string) =>
+        !props.pattern || props.pattern.test(value);
+
     const map = useMemo(
         () => props.provider.document.get(props.docKey, Y.Map<boolean>),
         [props.provider, props.docKey]
@@ -33,7 +44,16 @@ export function TagEditor(props: {
             classNames: {
                 namespace: "tagify form-control",
             },
-            placeholder: "ATT&CK:T1555, privesc, ...",
+            placeholder: props.placeholder ?? "ATT&CK:T1555, privesc, ...",
+            ...(props.pattern ? { pattern: props.pattern } : {}),
+            ...(props.delimiters ? { delimiters: props.delimiters } : {}),
+            ...(props.transform
+                ? {
+                      transformTag: (tagData: Tagify.TagData) => {
+                          tagData.value = props.transform!(tagData.value);
+                      },
+                  }
+                : {}),
         });
 
         taggify.current.addTags(Array.from(map.keys()));
@@ -50,6 +70,7 @@ export function TagEditor(props: {
         taggify.current.on("add", (ev) => {
             //console.log("add", ev.detail);
             const tag = ev.detail.data!.value;
+            if (!isValid(tag)) return;
             if (!map.get(tag)) {
                 // Don't re-add tags - doing so causes redundant updates and history entries.
                 map.set(tag, true);
@@ -65,7 +86,7 @@ export function TagEditor(props: {
             const newTag = ev.detail.data!.tag.value;
             if (oldTag === newTag) return;
             map.delete(oldTag);
-            map.set(newTag, true);
+            if (isValid(newTag)) map.set(newTag, true);
         });
         taggify.current.on("focus", onFocus);
         taggify.current.on("blur", onBlur);

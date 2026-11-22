@@ -38,6 +38,7 @@ from ghostwriter.reporting.models import (
     ReportTemplate,
     Severity,
 )
+from ghostwriter.reporting.validators import clean_cves
 from ghostwriter.rolodex.models import (
     Client,
     ClientContact,
@@ -218,11 +219,16 @@ class FindingSerializer(TaggitSerializer, CustomModelSerializer):
     severity_color_rgb = SerializerMethodField("get_severity_color_rgb")
     severity_color_hex = SerializerMethodField("get_severity_color_hex")
     tags = TagListSerializerField()
+    cves = SerializerMethodField("get_cves")
     extra_fields = ExtraFieldsSerField(Finding._meta.label)
 
     class Meta:
         model = Finding
         fields = "__all__"
+
+    def get_cves(self, obj):
+        # Values written through the GraphQL API skip Django validation, so drop anything malformed
+        return clean_cves(obj.cves)
 
     def get_severity_color(self, obj):
         return obj.severity.color
@@ -247,6 +253,7 @@ class FindingLinkSerializer(TaggitSerializer, CustomModelSerializer):
     cvss_data = SerializerMethodField("get_cvss_data")
     cvss_score = SerializerMethodField("get_cvss_score")
     tags = TagListSerializerField()
+    cves = SerializerMethodField("get_cves")
 
     # Include a copy of the ``mitigation`` field as ``recommendation`` to match legacy JSON output
     recommendation = serializers.CharField(source="mitigation")
@@ -259,6 +266,10 @@ class FindingLinkSerializer(TaggitSerializer, CustomModelSerializer):
         if obj.assigned_to:
             return obj.assigned_to.name
         return "TBD"
+
+    def get_cves(self, obj):
+        # Values written through the GraphQL API skip Django validation, so drop anything malformed
+        return clean_cves(obj.cves)
 
     def get_severity_color(self, obj):
         return obj.severity.color

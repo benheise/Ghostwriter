@@ -177,6 +177,16 @@ That template renders as:
   <img src="/images/features/image-53.png" alt=""/>
 </Frame>
 
+#### Findings Attributes – CVE IDs
+
+Each finding has a `cves` attribute: a list of the finding's CVE identifiers, sorted by year and number (e.g., `["CVE-2021-44228", "CVE-2021-45046"]`). The list is empty when the finding has no CVE IDs. To print the IDs on one line, use Jinja2's `join` filter:
+
+```
+{% if finding.cves %}CVE IDs: {{ finding.cves|join(", ") }}{% endif %}
+```
+
+The Excel report includes the same IDs in a _CVE IDs_ column.
+
 ### Ghostwriter Tags
 
 Several tags used for Word documents are not built into Jinja2. These tags are added after you open an expression or statement (before the space).

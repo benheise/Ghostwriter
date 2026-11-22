@@ -3,12 +3,24 @@
 # 3rd Party Libraries
 from import_export import resources
 from import_export.fields import Field
-from import_export.widgets import ForeignKeyWidget
+from import_export.widgets import ForeignKeyWidget, Widget
 from taggit.models import Tag
 
 # Ghostwriter Libraries
 from ghostwriter.modules.shared import TagFieldImport, TagWidget, taggit_before_import_row
 from ghostwriter.reporting.models import Finding, FindingType, Observation, Severity
+from ghostwriter.reporting.validators import clean_cves, normalize_cves
+
+
+class CveListWidget(Widget):
+    """Import and export CVE identifiers as one comma-separated column."""
+
+    def clean(self, value, row=None, **kwargs):
+        # Raises ``ValueError`` for an entry that is not a CVE identifier, which fails the row
+        return normalize_cves(value)
+
+    def render(self, value, obj=None, **kwargs):
+        return ", ".join(clean_cves(value))
 
 
 class FindingResource(resources.ModelResource):
@@ -24,6 +36,7 @@ class FindingResource(resources.ModelResource):
         column_name="finding_type",
         widget=ForeignKeyWidget(FindingType, "finding_type"),
     )
+    cves = Field(attribute="cves", column_name="cves", widget=CveListWidget())
     tags = TagFieldImport(attribute="tags", column_name="tags", widget=TagWidget(Tag, separator=","))
 
     def before_import_row(self, row, **kwargs):
@@ -37,6 +50,7 @@ class FindingResource(resources.ModelResource):
             "severity",
             "cvss_score",
             "cvss_vector",
+            "cves",
             "finding_type",
             "title",
             "description",
@@ -55,6 +69,7 @@ class FindingResource(resources.ModelResource):
             "severity",
             "cvss_score",
             "cvss_vector",
+            "cves",
             "finding_type",
             "title",
             "description",

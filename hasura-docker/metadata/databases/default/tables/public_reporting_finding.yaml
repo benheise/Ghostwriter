@@ -52,6 +52,7 @@ insert_permissions:
       columns:
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -80,6 +81,7 @@ insert_permissions:
       columns:
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -98,6 +100,7 @@ select_permissions:
       columns:
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -119,6 +122,7 @@ select_permissions:
         - id
         - severity_id
         - cvss_vector
+        - cves
         - cvss_score
         - extra_fields
         - description
@@ -141,6 +145,7 @@ update_permissions:
       columns:
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance
@@ -160,6 +165,7 @@ update_permissions:
       columns:
         - cvss_score
         - cvss_vector
+        - cves
         - description
         - extra_fields
         - finding_guidance

@@ -134,6 +134,7 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
             "Severity",
             "CVSS Score",
             "CVSS Vector",
+            "CVE IDs",
             "Affected Entities",
             "Description",
             "Impact",
@@ -204,6 +205,8 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
                 else "",
                 severity_format,
             )
+            col += 1
+            worksheet.write_string(row, col, ", ".join(finding.get("cves") or []), wrap_format)
             col += 1
 
             # Affected Entities

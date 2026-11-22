@@ -14,6 +14,11 @@ import {
     Get_SeveritiesQuery,
 } from "../../../__generated__/graphql";
 import CvssCalculator from "../plain_editors/cvss";
+import {
+    CVE_ID_DELIMITERS,
+    CVE_ID_PATTERN,
+    normalizeCve,
+} from "../../../services/cve";
 
 const GET_FINDING_TYPES = gql(`
     query GET_FINDING_TYPES {
@@ -350,6 +355,29 @@ export function FindingFormFields({
                                 />
                                 <small className="form-text text-muted">
                                     Set the CVSS vector for this finding
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="form-row">
+                        <div className="form-group col-md-12">
+                            <label htmlFor="collab-form-cves">CVE IDs</label>
+                            <div>
+                                <TagEditor
+                                    id="collab-form-cves"
+                                    className="form-control"
+                                    connected={connected}
+                                    provider={provider}
+                                    docKey="cves"
+                                    placeholder="CVE-2021-44228, CVE-2023-4966, ..."
+                                    pattern={CVE_ID_PATTERN}
+                                    transform={normalizeCve}
+                                    delimiters={CVE_ID_DELIMITERS}
+                                />
+                                <small className="form-text text-muted">
+                                    List the CVE identifiers this finding
+                                    covers, separated by commas or spaces
                                 </small>
                             </div>
                         </div>
