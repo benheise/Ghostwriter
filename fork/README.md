@@ -53,7 +53,30 @@ source.
 
    Each version's directory also has a single combined patch (`ghostwriter-<version>-benheise.patch`) and the
    `SHA256SUMS` file used above.
-4. **Build and start Ghostwriter from the patched source.** `production.yml` builds every image from the checkout:
+4. **Bring over your configuration (Ghostwriter CLI installs only).** The CLI keeps your configuration outside any
+   source tree, in its data directory (`~/.local/share/ghostwriter` on Linux). Copy it into the checkout, using `sudo`
+   if the CLI ran as root:
+
+   ```bash
+   GW_DATA=~/.local/share/ghostwriter
+   cp "$GW_DATA/.env" .
+   cp -r "$GW_DATA/ssl" .
+   cp "$GW_DATA"/settings/*.py config/settings/production.d/ 2>/dev/null || true
+   ```
+
+   If `$GW_DATA/nginx-ipv4.conf` exists, your host has no IPv6, so the CLI gave nginx an IPv4-only configuration.
+   Copy that file into the checkout too. Then create `docker-compose.ipv4.yml` next to `production.yml`:
+
+   ```yaml
+   services:
+     nginx:
+       volumes:
+         - ./nginx-ipv4.conf:/etc/nginx/nginx.conf:ro
+   ```
+
+   Add `-f docker-compose.ipv4.yml` after `-f production.yml` in every command below. Finally, stop the pre-built
+   containers with `./ghostwriter-cli containers down`. Your volumes are kept.
+5. **Build and start Ghostwriter from the patched source.** `production.yml` builds every image from the checkout:
 
    ```bash
    docker compose -p ghostwriter_sys -f production.yml build
@@ -61,9 +84,9 @@ source.
    ```
 
    `-p ghostwriter_sys` keeps the project name that Ghostwriter CLI uses, so the containers reuse your existing database
-   and media volumes. Without it, Compose names the project after the directory and starts with empty volumes. Run
-   these commands in the directory that holds your `.env`. Django applies the new database migrations when it starts.
-5. **Optional: fill CVE IDs from existing findings.** Preview, then apply:
+   and media volumes. Without it, Compose names the project after the directory and starts with empty volumes. Django
+   applies the new database migrations when it starts.
+6. **Optional: fill CVE IDs from existing findings.** Preview, then apply:
 
    ```bash
    docker compose -p ghostwriter_sys -f production.yml run --rm django python manage.py extract_cves --dry-run
