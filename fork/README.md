@@ -7,8 +7,8 @@ with these changes on this fork, not upstream.
 Every change ships two ways:
 
 * **This repository.** `master` is the latest upstream release with the fork's commits on top.
-* **Patch files** for people who run upstream Ghostwriter. Each [release](https://github.com/benheise/Ghostwriter/releases)
-  of the fork has a patch set for the matching upstream version.
+* **Patch files** for people who run upstream Ghostwriter, in [`fork/patches/`](patches/), one directory per upstream
+  version.
 
 ## Changes
 
@@ -38,19 +38,21 @@ source.
    ```
 
    If you already run Ghostwriter from a clone, use that directory and confirm `cat VERSION` matches the patch set.
-3. **Apply the patches.** Download the patch files from the matching fork release. Apply them in order, either all of
-   them or `0001` alone:
+3. **Apply the patches.** Get the patch set for your version from this fork, check it, and apply the patches in order.
+   You can apply all of them or `0001` alone:
 
    ```bash
-   git am --3way /path/to/patches/*.patch
+   git clone --depth 1 https://github.com/benheise/Ghostwriter.git ../ghostwriter-fork
+   (cd ../ghostwriter-fork/fork/patches/v7.3.5 && sha256sum -c SHA256SUMS)
+   git am --3way ../ghostwriter-fork/fork/patches/v7.3.5/0*.patch
    ```
 
    `git am` keeps each change as its own commit. If you don't want commits, `git apply --check` and then `git apply`
    each file in order. These also work in an extracted release archive that isn't a git checkout. The template fix
    modifies binary `.docx` files, so plain `patch` cannot apply `0001`. Use git.
 
-   Each release also has a single combined patch (`ghostwriter-<version>-benheise.patch`) and a `SHA256SUMS` file.
-   Check the download with `sha256sum -c SHA256SUMS`.
+   Each version's directory also has a single combined patch (`ghostwriter-<version>-benheise.patch`) and the
+   `SHA256SUMS` file used above.
 4. **Build and start Ghostwriter from the patched source.** `production.yml` builds every image from the checkout:
 
    ```bash
@@ -73,8 +75,8 @@ and `./ghostwriter-cli update` start the unpatched pre-built images again.
 
 ### Upgrading Upstream Later
 
-Before you upgrade to a new upstream release, download the fork's patch set for that release. If the fork hasn't
-published one yet, stay on your current version or remove the patches first. Then check out the new upstream tag,
+Before you upgrade to a new upstream release, check `fork/patches/` for that release's patch set. If there isn't one
+yet, stay on your current version or remove the patches first. Then check out the new upstream tag,
 apply the new patches, and rebuild as above.
 
 ### Removing the Patches
@@ -100,7 +102,7 @@ out the unpatched release and rebuild, or go back to the pre-built images with G
    against a Hasura instance running the merged metadata, if the GraphQL schema changed.
 3. Build the patch set: `fork/make-patches.sh vX.Y.Z`. It cherry-picks the fork's own commits onto a clean copy of the
    upstream tag, so a patch that no longer applies fails here rather than for users.
-4. Tag `vX.Y.Z-benheise.N`, push the tag, and publish a release with the files from `fork/dist/vX.Y.Z/` and the
-   apply steps above.
+4. Commit the new `fork/patches/vX.Y.Z/` directory with the merge and push `master`. Optionally, tag the commit
+   `vX.Y.Z-benheise.N` and publish a GitHub release that links to the directory.
 
 Commits that touch only `fork/` or this note in `README.md` stay out of the patches.

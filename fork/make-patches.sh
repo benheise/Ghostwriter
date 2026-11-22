@@ -11,7 +11,7 @@ set -euo pipefail
 
 tag="${1:?usage: fork/make-patches.sh <upstream-tag> [output-dir]}"
 root="$(git rev-parse --show-toplevel)"
-out="${2:-$root/fork/dist/$tag}"
+out="${2:-$root/fork/patches/$tag}"
 base="$(git rev-parse --verify --quiet "$tag^{commit}")" || { echo "Unknown tag: $tag" >&2; exit 1; }
 excludes=(":(exclude)fork" ":(exclude)README.md")
 
@@ -46,7 +46,7 @@ done
 rm -rf "$out"
 mkdir -p "$out"
 version="${tag#v}"
-git -C "$work" format-patch --quiet --binary --no-signature -o "$out" "$base..HEAD" -- . "${excludes[@]}"
+git -C "$work" format-patch --quiet --binary --no-signature --zero-commit -o "$out" "$base..HEAD" -- . "${excludes[@]}"
 git -C "$work" diff --binary "$base" HEAD -- . "${excludes[@]}" > "$out/ghostwriter-$version-benheise.patch"
 
 # Prove the set applies to a clean copy of the tag, one by one and combined
