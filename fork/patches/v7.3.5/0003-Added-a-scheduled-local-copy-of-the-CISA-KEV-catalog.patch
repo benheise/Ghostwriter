@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Mon, 23 Nov 2026 01:57:05 +0000
-Subject: [PATCH 3/3] Added a scheduled local copy of the CISA KEV catalog and
+Subject: [PATCH 3/4] Added a scheduled local copy of the CISA KEV catalog and
  EPSS scores
 
 A new vulnintel app keeps CISA's Known Exploited Vulnerabilities catalog and

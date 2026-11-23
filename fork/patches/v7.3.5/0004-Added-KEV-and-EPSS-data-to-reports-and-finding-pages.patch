@@ -1,0 +1,1109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 23 Nov 2026 02:43:55 +0000
+Subject: [PATCH 4/4] Added KEV and EPSS data to reports and finding pages
+
+Report data now gives each finding its stored KEV and EPSS facts:
+- kev, kev_cves, kev_due_date and kev_ransomware;
+- epss_max, epss_max_percentile, epss_max_cve and epss_over_threshold;
+- a per-CVE vuln_intel list.
+The report-level vuln_intel holds the catalog version and the dates the data
+was current. Three totals count KEV, ransomware and high-EPSS findings. The
+template linter has samples for every key, and a test keeps them in step with
+the real data.
+
+The Excel report adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS
+and EPSS Percentile columns. Library finding pages show KEV and EPSS badges
+per CVE ID. The findings library and report findings tables show one KEV badge
+and the highest EPSS score per finding, from one lookup per page.
+
+A new EPSS threshold setting highlights high scores and drives the totals.
+KEV release dates now parse on Pythons older than 3.11.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JeRCvM2shAtegxe489Vfvx
+---
+ CHANGELOG.md                                  |   5 +
+ ...configuring-vulnerability-intelligence.mdx |   2 +
+ .../word-template-variables.mdx               |  33 +++
+ ghostwriter/modules/custom_serializers.py     |   4 +
+ ghostwriter/modules/linting_utils.py          |  13 +
+ .../modules/reportwriter/report/xlsx.py       |   5 +
+ .../templates/reporting/finding_detail.html   |  12 +-
+ .../templates/reporting/finding_list.html     |   4 +-
+ .../snippets/report_findings_table.html       |   4 +-
+ ghostwriter/reporting/tests/test_views.py     |  43 ++++
+ ghostwriter/vulnintel/admin.py                |  10 +
+ ghostwriter/vulnintel/context.py              | 145 +++++++++++
+ ghostwriter/vulnintel/feeds.py                |   4 +-
+ .../migrations/0002_epss_threshold.py         |  24 ++
+ ghostwriter/vulnintel/models.py               |   9 +
+ ghostwriter/vulnintel/samples.py              |  52 ++++
+ .../vulnintel/snippets/cve_badges.html        |  20 ++
+ .../vulnintel/templatetags/__init__.py        |   0
+ .../vulnintel/templatetags/vulnintel_tags.py  | 117 +++++++++
+ .../tests/test_admin_and_commands.py          |   2 +
+ ghostwriter/vulnintel/tests/test_context.py   | 230 ++++++++++++++++++
+ ghostwriter/vulnintel/tests/test_feeds.py     |  12 +
+ ghostwriter/vulnintel/xlsx.py                 |  22 ++
+ 23 files changed, 761 insertions(+), 11 deletions(-)
+ create mode 100644 ghostwriter/vulnintel/context.py
+ create mode 100644 ghostwriter/vulnintel/migrations/0002_epss_threshold.py
+ create mode 100644 ghostwriter/vulnintel/samples.py
+ create mode 100644 ghostwriter/vulnintel/templates/vulnintel/snippets/cve_badges.html
+ create mode 100644 ghostwriter/vulnintel/templatetags/__init__.py
+ create mode 100644 ghostwriter/vulnintel/templatetags/vulnintel_tags.py
+ create mode 100644 ghostwriter/vulnintel/tests/test_context.py
+ create mode 100644 ghostwriter/vulnintel/xlsx.py
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 10cd0da..1bb9dbd 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+   * Downloads are checked for size, shape, and age, so a failed or truncated download never replaces stored data
+   * The `import_kev` and `import_epss` management commands load offline copies, and `refresh_vuln_intel` runs a refresh from the command line
+   * The data is available read-only in the admin panel and through GraphQL (`knownExploitedVulnerability` and `epssScore`) for the user and manager roles
++* Added KEV and EPSS data for each finding's CVE IDs to reports and finding pages
++  * Report templates get `finding.kev`, `kev_cves`, `kev_due_date`, `kev_ransomware`, `epss_max`, `epss_max_percentile`, `epss_max_cve`, `epss_over_threshold`, and a per-CVE `vuln_intel` list, plus a report-level `vuln_intel` with the dates the data was current and three new `totals`; the template linter knows them all
++  * The Excel report adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS, and EPSS Percentile columns
++  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge and the highest EPSS score per finding
++  * A new EPSS threshold setting (10% by default) highlights high scores and sets `totals.findings_epss_over`
+ 
+ ### Fixed
+ 
+diff --git a/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx b/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx
+index 23a6eed..d7ed6b3 100644
+--- a/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx
++++ b/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx
+@@ -57,6 +57,8 @@ The refresh job is listed in `GHOSTWRITER_DJANGO_Q_SCHEDULE_TASKS`, and the EPSS
+ 
+ ## Where the Data Is Available
+ 
++* **Reports:** each finding's KEV and EPSS data, the dates the data was current, and totals, for Word and PowerPoint templates and the JSON export. [Report template variables](/features/reporting/report-templates/word-template-variables) lists the names. The Excel export adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS and EPSS Percentile columns.
++* **Finding pages:** each CVE ID on a library finding shows a **KEV** badge, with its due date and any known ransomware use in the tooltip, and its EPSS score. The findings library's CVE IDs column and the findings table on each report show one KEV badge and the highest EPSS score per finding. An EPSS score at or above the **EPSS Threshold** (10% by default, in the **Reports** section of the configuration) is highlighted. That threshold also sets `totals.findings_epss_over` in reports.
+ * **Admin panel:** read-only, searchable lists of KEV entries and EPSS scores.
+ * **GraphQL API:** the `knownExploitedVulnerability` and `epssScore` queries, for the user and manager roles. Look entries up by the finding's `cves`, for example `knownExploitedVulnerability(where: {cveId: {_in: $cves}})`. Service tokens do not have access to these tables.
+ 
+diff --git a/DOCS/features/reporting/report-templates/word-template-variables.mdx b/DOCS/features/reporting/report-templates/word-template-variables.mdx
+index 7a9f980..28c4aa2 100644
+--- a/DOCS/features/reporting/report-templates/word-template-variables.mdx
++++ b/DOCS/features/reporting/report-templates/word-template-variables.mdx
+@@ -187,6 +187,39 @@ Each finding has a `cves` attribute: a list of the finding's CVE identifiers, so
+ 
+ The Excel report includes the same IDs in a _CVE IDs_ column.
+ 
++#### Findings Attributes – KEV and EPSS
++
++When an administrator enables [vulnerability intelligence](/configuring-global-settings/configuring-vulnerability-intelligence), each finding also has the stored CISA KEV and FIRST EPSS data for its CVE IDs. Entries CISA has removed from the catalog don't count. Dates use the server's date format, and scores run from 0 to 1.
++
++| Variable | Contents |
++|----------|----------|
++| `finding.kev` | `True` if any of the finding's CVE IDs is in the KEV catalog |
++| `finding.kev_cves` | The finding's CVE IDs that are in the catalog |
++| `finding.kev_due_date` | The earliest remediation due date among them, or an empty string |
++| `finding.kev_ransomware` | `True` if CISA knows any of them to be used in ransomware campaigns |
++| `finding.epss_max` | The highest EPSS score among the finding's CVE IDs, or `None` |
++| `finding.epss_max_percentile` | That score's percentile, or `None` |
++| `finding.epss_max_cve` | The CVE ID with that score |
++| `finding.epss_over_threshold` | `True` if `epss_max` is at or above the EPSS threshold in the configuration |
++| `finding.vuln_intel` | One entry per CVE ID, in the finding's order: `cve`, `kev` (with `date_added`, `due_date`, `known_ransomware`, `vendor`, `product`, `name`, `short_description`, `required_action`, `notes` and `cwes`, or `None`), and `epss` (with `score`, `percentile`, `score_date` and `model_version`, or `None`) |
++
++The report-level `vuln_intel` says how current the data is: `kev_catalog_version`, `kev_released`, `kev_updated`, `epss_score_date`, `epss_model_version` and `epss_threshold`, plus `cves` (every CVE ID in the report) and `kev_cves` (those in the catalog). `totals` gains `findings_kev`, `findings_kev_ransomware` and `findings_epss_over`.
++
++For example, a line under each finding:
++
++```
++{% if finding.kev %}Known exploited (CISA KEV), remediation due {{ finding.kev_due_date }}.{% endif %}
++{% if finding.epss_max is not none %}EPSS {{ "%.1f"|format(finding.epss_max * 100) }}% ({{ finding.epss_max_cve }}).{% endif %}
++```
++
++And a summary sentence, with the date the scores were current:
++
++```
++{{ totals.findings_kev }} of {{ totals.findings }} findings involve known exploited vulnerabilities. EPSS scores as of {{ vuln_intel.epss_score_date }}.
++```
++
++FIRST asks that reports showing EPSS scores credit it (first.org/epss). The template linter knows all of these names, so templates that use them lint cleanly.
++
+ ### Ghostwriter Tags
+ 
+ Several tags used for Word documents are not built into Jinja2. These tags are added after you open an expression or statement (before the space).
+diff --git a/ghostwriter/modules/custom_serializers.py b/ghostwriter/modules/custom_serializers.py
+index 2759d54..657d0b4 100644
+--- a/ghostwriter/modules/custom_serializers.py
++++ b/ghostwriter/modules/custom_serializers.py
+@@ -39,6 +39,7 @@ from ghostwriter.reporting.models import (
+     Severity,
+ )
+ from ghostwriter.reporting.validators import clean_cves
++from ghostwriter.vulnintel.context import add_report_vuln_intel
+ from ghostwriter.rolodex.models import (
+     Client,
+     ClientContact,
+@@ -1051,6 +1052,9 @@ class ReportDataSerializer(CustomModelSerializer):
+         rep["totals"]["team"] = total_team
+         rep["totals"]["targets"] = total_targets
+ 
++        # KEV and EPSS data for each finding's CVE IDs, with report-level dates and totals
++        add_report_vuln_intel(rep)
++
+         return rep
+ 
+ 
+diff --git a/ghostwriter/modules/linting_utils.py b/ghostwriter/modules/linting_utils.py
+index 13d3056..99cf8c7 100644
+--- a/ghostwriter/modules/linting_utils.py
++++ b/ghostwriter/modules/linting_utils.py
+@@ -1,5 +1,13 @@
+ """This contains utilities and values used by template linting."""
+ 
++# Standard Libraries
++import copy
++
++# Ghostwriter Libraries
++from ghostwriter.vulnintel.samples import SAMPLE_FINDING as VULN_INTEL_SAMPLE_FINDING
++from ghostwriter.vulnintel.samples import SAMPLE_REPORT as VULN_INTEL_SAMPLE_REPORT
++from ghostwriter.vulnintel.samples import SAMPLE_TOTALS as VULN_INTEL_SAMPLE_TOTALS
++
+ # Example JSON reporting data for loading into templates for rendering tests
+ LINTER_CONTEXT = {
+     "report_date": "Mar. 25, 2021",
+@@ -588,3 +596,8 @@ LINTER_CONTEXT = {
+         "findings": [],
+     }
+ }
++
++# KEV and EPSS keys added by ``ghostwriter.vulnintel.context.add_report_vuln_intel``
++LINTER_CONTEXT["findings"][0].update(copy.deepcopy(VULN_INTEL_SAMPLE_FINDING))
++LINTER_CONTEXT["vuln_intel"] = copy.deepcopy(VULN_INTEL_SAMPLE_REPORT)
++LINTER_CONTEXT["totals"].update(VULN_INTEL_SAMPLE_TOTALS)
+diff --git a/ghostwriter/modules/reportwriter/report/xlsx.py b/ghostwriter/modules/reportwriter/report/xlsx.py
+index f8c2c00..8fa5c2e 100644
+--- a/ghostwriter/modules/reportwriter/report/xlsx.py
++++ b/ghostwriter/modules/reportwriter/report/xlsx.py
+@@ -8,6 +8,7 @@ from xlsxwriter.utility import xl_col_to_name
+ from ghostwriter.modules.reportwriter.base.xlsx import ExportXlsxBase
+ from ghostwriter.modules.reportwriter.report.base import ExportReportBase
+ from ghostwriter.reporting.models import Finding
++from ghostwriter.vulnintel import xlsx as vuln_intel_xlsx
+ 
+ 
+ logger = logging.getLogger(__name__)
+@@ -122,6 +123,8 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
+                 severity_formats[color] = severity_format
+             return severity_formats[color]
+ 
++        vuln_intel_formats = {}
++
+         # Create a format for everything else
+         wrap_format = xlsx_doc.add_format()
+         wrap_format.set_text_wrap()
+@@ -135,6 +138,7 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
+             "CVSS Score",
+             "CVSS Vector",
+             "CVE IDs",
++            *vuln_intel_xlsx.HEADERS,
+             "Affected Entities",
+             "Description",
+             "Impact",
+@@ -208,6 +212,7 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
+             col += 1
+             worksheet.write_string(row, col, ", ".join(finding.get("cves") or []), wrap_format)
+             col += 1
++            col = vuln_intel_xlsx.write_cells(xlsx_doc, worksheet, row, col, finding, wrap_format, vuln_intel_formats)
+ 
+             # Affected Entities
+             if finding["affected_entities"]:
+diff --git a/ghostwriter/reporting/templates/reporting/finding_detail.html b/ghostwriter/reporting/templates/reporting/finding_detail.html
+index 7994208..c37124f 100644
+--- a/ghostwriter/reporting/templates/reporting/finding_detail.html
++++ b/ghostwriter/reporting/templates/reporting/finding_detail.html
+@@ -1,6 +1,6 @@
+ {% extends "base_generic.html" %}
+ 
+-{% load bleach_tags extra_fields custom_tags %}
++{% load bleach_tags extra_fields custom_tags vulnintel_tags %}
+ 
+ {% block pagetitle %}{{ finding.display_title }} Details{% endblock %}
+ 
+@@ -30,12 +30,10 @@
+               {% else %}fa-bug{% endif %}" aria-hidden="true"></i>
+             <span>{{ finding.finding_type.finding_type }}</span>
+           </span>
+-          {% for cve in finding.cve_ids %}
+-            <span class="library-tag library-tag-neutral finding-cve-badge" title="CVE ID">
+-              <i class="fas fa-bug" aria-hidden="true"></i>
+-              <span>{{ cve }}</span>
+-            </span>
+-          {% endfor %}
++          {% if finding.cve_ids %}
++            {% finding_cve_lookup finding as vuln_intel %}
++            {% cve_intel_badges finding.cve_ids vuln_intel %}
++          {% endif %}
+           {% for tag in finding.tags.names %}
+             <span class="library-tag library-tag-neutral">{{ tag|bleach }}</span>
+           {% endfor %}
+diff --git a/ghostwriter/reporting/templates/reporting/finding_list.html b/ghostwriter/reporting/templates/reporting/finding_list.html
+index a320621..7b7ee7a 100644
+--- a/ghostwriter/reporting/templates/reporting/finding_list.html
++++ b/ghostwriter/reporting/templates/reporting/finding_list.html
+@@ -1,5 +1,5 @@
+ {% extends "base_generic.html" %}
+-{% load crispy_forms_tags bleach_tags custom_tags static %}
++{% load crispy_forms_tags bleach_tags custom_tags static vulnintel_tags %}
+ 
+ {% block pagetitle %}Findings Library{% endblock %}
+ 
+@@ -92,6 +92,7 @@
+               </tr>
+             </thead>
+             <tbody class="list">
++              {% vuln_intel_for filter.qs as vuln_intel %}
+               {% for finding in filter.qs %}
+                 <tr>
+                   <td class="align-middle text-start" data-label="Severity">
+@@ -131,6 +132,7 @@
+                   </td>
+                   <td class="align-middle text-start" data-label="CVE IDs">
+                     {% for cve in finding.cve_ids %}<code class="finding-cve-id d-block">{{ cve }}</code>{% empty %}<span class="text-muted">Not set</span>{% endfor %}
++                    {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
+                   </td>
+                   <td class="align-middle text-start" data-label="Tags">
+                     {% for tag in finding.tags.all %}
+diff --git a/ghostwriter/reporting/templates/snippets/report_findings_table.html b/ghostwriter/reporting/templates/snippets/report_findings_table.html
+index 142eb9a..b44241b 100644
+--- a/ghostwriter/reporting/templates/snippets/report_findings_table.html
++++ b/ghostwriter/reporting/templates/snippets/report_findings_table.html
+@@ -1,6 +1,7 @@
+-{% load report_tags %}
++{% load report_tags vulnintel_tags %}
+ 
+ {% if report.reportfindinglink_set.exists %}
++  {% vuln_intel_for report.reportfindinglink_set.all as vuln_intel %}
+   <div class="table-responsive data-table-frame findings-table-frame">
+     <table id="findings-table" class="table table-sm report-items-table report-findings-table"
+            findings-update-url="{% url 'reporting:update_report_findings' %}">
+@@ -62,6 +63,7 @@
+                    data-bs-toggle="tooltip" data-bs-placement="top"
+                    title="Started as a blank finding rather than a library template"></i>
+               {% endif %}
++              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
+             </td>
+             <td class="align-middle text-start">
+               {% if finding.cvss_score %}
+diff --git a/ghostwriter/reporting/tests/test_views.py b/ghostwriter/reporting/tests/test_views.py
+index 8383cc5..ccb0c13 100644
+--- a/ghostwriter/reporting/tests/test_views.py
++++ b/ghostwriter/reporting/tests/test_views.py
+@@ -5952,6 +5952,11 @@ class GenerateReportTests(TestCase):
+             "CVSS Score",
+             "CVSS Vector",
+             "CVE IDs",
++            "KEV",
++            "KEV Due Date",
++            "Known Ransomware Use",
++            "Highest EPSS",
++            "EPSS Percentile",
+             "Affected Entities",
+             "Description",
+             "Impact",
+@@ -5988,6 +5993,44 @@ class GenerateReportTests(TestCase):
+             finding_row[headers.index("CVE IDs")], "CVE-2021-44228, CVE-2021-45046"
+         )
+ 
++    def test_view_xlsx_includes_kev_and_epss(self):
++        # Standard Libraries
++        from datetime import date
++
++        # Ghostwriter Libraries
++        from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability
++
++        KnownExploitedVulnerability.objects.create(
++            cve_id="CVE-2021-44228", due_date=date(2021, 12, 24), known_ransomware=True
++        )
++        EpssScore.objects.create(
++            cve_id="CVE-2021-44228", epss=0.97, percentile=0.999, score_date=date(2026, 11, 22)
++        )
++        finding = ReportFindingLinkFactory(
++            report=self.report, title="Finding on KEV", cves=["CVE-2021-44228"]
++        )
++        response = self.client_mgr.get(self.xlsx_uri)
++        self.assertEqual(response.status_code, 200, response.content)
++
++        rows = self._xlsx_rows(response)
++        headers = rows[0]
++        for header in ("KEV", "KEV Due Date", "Known Ransomware Use", "Highest EPSS", "EPSS Percentile"):
++            self.assertIn(header, headers)
++        self.assertEqual(headers.index("KEV"), headers.index("CVE IDs") + 1)
++        finding_row = next(row for row in rows[1:] if row[0] == finding.title)
++        self.assertEqual(finding_row[headers.index("KEV")], "CVE-2021-44228")
++        self.assertEqual(finding_row[headers.index("Known Ransomware Use")], "Yes")
++        self.assertAlmostEqual(float(finding_row[headers.index("Highest EPSS")]), 0.97)
++        self.assertAlmostEqual(float(finding_row[headers.index("EPSS Percentile")]), 0.999)
++
++    def test_view_json_includes_kev_and_epss(self):
++        response = self.client_mgr.get(self.json_uri)
++        self.assertEqual(response.status_code, 200)
++        data = json.loads(response.content)
++        self.assertIn("vuln_intel", data)
++        self.assertIn("findings_kev", data["totals"])
++        self.assertIn("epss_max", data["findings"][0])
++
+     def test_view_xlsx_prepares_supporting_evidence_names_once(self):
+         from ghostwriter.reporting.views2 import report as report_views
+ 
+diff --git a/ghostwriter/vulnintel/admin.py b/ghostwriter/vulnintel/admin.py
+index 63cbdf8..2498428 100644
+--- a/ghostwriter/vulnintel/admin.py
++++ b/ghostwriter/vulnintel/admin.py
+@@ -56,6 +56,16 @@ class VulnIntelConfigurationAdmin(SingletonModelAdmin):
+                 "fields": ("update_frequency", "run_at", "schedule_status"),
+             },
+         ),
++        (
++            "Reports",
++            {
++                "description": (
++                    "Report templates get each finding's KEV and EPSS data. See the report template variables "
++                    "documentation for the names."
++                ),
++                "fields": ("epss_threshold",),
++            },
++        ),
+         (
+             "Feeds and Limits",
+             {
+diff --git a/ghostwriter/vulnintel/context.py b/ghostwriter/vulnintel/context.py
+new file mode 100644
+index 0000000..f919e48
+--- /dev/null
++++ b/ghostwriter/vulnintel/context.py
+@@ -0,0 +1,145 @@
++"""KEV and EPSS data for findings, for report templates, the Excel export, and pages."""
++
++# Django Imports
++from django.conf import settings
++from django.utils import dateformat
++
++# Ghostwriter Libraries
++from ghostwriter.reporting.validators import clean_cves
++from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability, VulnIntelConfiguration
++
++
++def format_date(value):
++    """Format a date or datetime the way the rest of the report data does, or return an empty string."""
++    return dateformat.format(value, settings.DATE_FORMAT) if value else ""
++
++
++class VulnIntelLookup:
++    """The stored KEV entries and EPSS scores for a set of CVE IDs, fetched with two queries."""
++
++    def __init__(self, cve_ids, threshold=None):
++        cve_ids = set(cve_ids)
++        self.cve_ids = cve_ids
++        # Entries CISA removed from the catalog no longer count as known exploited
++        self.kev = {
++            entry.cve_id: entry
++            for entry in KnownExploitedVulnerability.objects.filter(cve_id__in=cve_ids, removed_on__isnull=True)
++        }
++        self.epss = {score.cve_id: score for score in EpssScore.objects.filter(cve_id__in=cve_ids)}
++        self.threshold = VulnIntelConfiguration.get_solo().epss_threshold if threshold is None else threshold
++        self._dates = {}
++
++    def date_text(self, value):
++        """``format_date``, cached: long tables show the same few dates many times."""
++        if value not in self._dates:
++            self._dates[value] = format_date(value)
++        return self._dates[value]
++
++    @classmethod
++    def for_findings(cls, findings, threshold=None):
++        """Build a lookup for every CVE ID on an iterable of finding or report finding objects."""
++        cve_ids = set()
++        for finding in findings:
++            cve_ids.update(clean_cves(finding.cves))
++        return cls(cve_ids, threshold=threshold)
++
++    def summary(self, cves):
++        """Return the KEV and EPSS facts for a finding with these CVE IDs (see ``finding_context``)."""
++        kev_entries = [self.kev[cve_id] for cve_id in cves if cve_id in self.kev]
++        scores = [self.epss[cve_id] for cve_id in cves if cve_id in self.epss]
++        top = max(scores, key=lambda score: (score.epss, score.cve_id), default=None)
++        due_dates = [entry.due_date for entry in kev_entries if entry.due_date]
++        return {
++            "kev_entries": kev_entries,
++            "scores": scores,
++            "top": top,
++            "earliest_due": min(due_dates, default=None),
++            "over_threshold": bool(top and top.epss >= self.threshold),
++        }
++
++    def finding_context(self, cves):
++        """Return the keys added to each finding in the report data."""
++        facts = self.summary(cves)
++        top = facts["top"]
++        return {
++            "vuln_intel": [
++                {
++                    "cve": cve_id,
++                    "kev": kev_context(self.kev.get(cve_id)),
++                    "epss": epss_context(self.epss.get(cve_id)),
++                }
++                for cve_id in cves
++            ],
++            "kev": bool(facts["kev_entries"]),
++            "kev_cves": [entry.cve_id for entry in facts["kev_entries"]],
++            "kev_ransomware": any(entry.known_ransomware for entry in facts["kev_entries"]),
++            "kev_due_date": format_date(facts["earliest_due"]),
++            "epss_max": top.epss if top else None,
++            "epss_max_percentile": top.percentile if top else None,
++            "epss_max_cve": top.cve_id if top else "",
++            "epss_over_threshold": facts["over_threshold"],
++        }
++
++
++def kev_context(entry):
++    if entry is None:
++        return None
++    return {
++        "vendor": entry.vendor,
++        "product": entry.product,
++        "name": entry.name,
++        "date_added": format_date(entry.date_added),
++        "due_date": format_date(entry.due_date),
++        "known_ransomware": entry.known_ransomware,
++        "short_description": entry.short_description,
++        "required_action": entry.required_action,
++        "notes": entry.notes,
++        "cwes": list(entry.cwes or []),
++    }
++
++
++def epss_context(score):
++    if score is None:
++        return None
++    return {
++        "score": score.epss,
++        "percentile": score.percentile,
++        "score_date": format_date(score.score_date),
++        "model_version": score.model_version,
++    }
++
++
++def add_report_vuln_intel(rep):
++    """
++    Add KEV and EPSS data to serialized report data: keys on each finding, a report-level
++    ``vuln_intel`` with the dates and versions of the stored data, and counts in ``totals``.
++    """
++    config = VulnIntelConfiguration.get_solo()
++    findings = rep.get("findings") or []
++    cve_ids = set()
++    for finding in findings:
++        cve_ids.update(finding.get("cves") or [])
++    lookup = VulnIntelLookup(cve_ids, threshold=config.epss_threshold)
++
++    findings_kev = findings_ransomware = findings_epss_over = 0
++    for finding in findings:
++        finding.update(lookup.finding_context(finding.get("cves") or []))
++        findings_kev += finding["kev"]
++        findings_ransomware += finding["kev_ransomware"]
++        findings_epss_over += finding["epss_over_threshold"]
++
++    rep["vuln_intel"] = {
++        "cves": sorted(cve_ids),
++        "kev_cves": sorted(lookup.kev),
++        "kev_catalog_version": config.kev_catalog_version,
++        "kev_released": format_date(config.kev_released_at),
++        "kev_updated": format_date(config.kev_synced_at),
++        "epss_score_date": format_date(config.epss_score_date),
++        "epss_model_version": config.epss_model_version,
++        "epss_threshold": config.epss_threshold,
++    }
++    totals = rep.setdefault("totals", {})
++    totals["findings_kev"] = findings_kev
++    totals["findings_kev_ransomware"] = findings_ransomware
++    totals["findings_epss_over"] = findings_epss_over
++    return rep
+diff --git a/ghostwriter/vulnintel/feeds.py b/ghostwriter/vulnintel/feeds.py
+index ed10f86..13b0dfa 100644
+--- a/ghostwriter/vulnintel/feeds.py
++++ b/ghostwriter/vulnintel/feeds.py
+@@ -84,8 +84,8 @@ def _parse_datetime(value):
+     if not value:
+         return None
+     text = str(value).strip().replace("Z", "+00:00")
+-    # Python wants at most six digits of fractional seconds
+-    text = re.sub(r"(\.\d{6})\d+", r"\1", text)
++    # Older Pythons accept only exactly six digits of fractional seconds (CISA publishes four)
++    text = re.sub(r"\.(\d+)", lambda match: "." + match.group(1)[:6].ljust(6, "0"), text, count=1)
+     try:
+         parsed = datetime.fromisoformat(text)
+     except ValueError:
+diff --git a/ghostwriter/vulnintel/migrations/0002_epss_threshold.py b/ghostwriter/vulnintel/migrations/0002_epss_threshold.py
+new file mode 100644
+index 0000000..bf570d8
+--- /dev/null
++++ b/ghostwriter/vulnintel/migrations/0002_epss_threshold.py
+@@ -0,0 +1,24 @@
++# Generated by Django 5.2.14 on 2026-11-23 02:17
++
++import django.core.validators
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ("vulnintel", "0001_initial"),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name="vulnintelconfiguration",
++            name="epss_threshold",
++            field=models.FloatField(
++                default=0.1,
++                help_text="Findings whose highest EPSS score is at or above this value (0.1 means 10%) are flagged in reports and pages, and counted in totals.findings_epss_over",
++                validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(1)],
++                verbose_name="EPSS Threshold",
++            ),
++        ),
++    ]
+diff --git a/ghostwriter/vulnintel/models.py b/ghostwriter/vulnintel/models.py
+index 10c13b6..9cf255a 100644
+--- a/ghostwriter/vulnintel/models.py
++++ b/ghostwriter/vulnintel/models.py
+@@ -106,6 +106,15 @@ class VulnIntelConfiguration(SingletonModel):
+         validators=[MinValueValidator(5), MaxValueValidator(600)],
+         help_text="Give up on a download that takes longer than this",
+     )
++    epss_threshold = models.FloatField(
++        "EPSS Threshold",
++        default=0.1,
++        validators=[MinValueValidator(0), MaxValueValidator(1)],
++        help_text=(
++            "Findings whose highest EPSS score is at or above this value (0.1 means 10%) are flagged in reports "
++            "and pages, and counted in totals.findings_epss_over"
++        ),
++    )
+     max_download_mb = models.PositiveIntegerField(
+         "Maximum Download Size (MB)",
+         default=100,
+diff --git a/ghostwriter/vulnintel/samples.py b/ghostwriter/vulnintel/samples.py
+new file mode 100644
+index 0000000..a53d614
+--- /dev/null
++++ b/ghostwriter/vulnintel/samples.py
+@@ -0,0 +1,52 @@
++"""Sample KEV and EPSS values for the report template linter. Kept free of model imports."""
++
++SAMPLE_FINDING = {
++    "vuln_intel": [
++        {
++            "cve": "CVE-2021-44228",
++            "kev": {
++                "vendor": "Apache",
++                "product": "Log4j2",
++                "name": "Apache Log4j2 Remote Code Execution Vulnerability",
++                "date_added": "Dec 10, 2021",
++                "due_date": "Dec 24, 2021",
++                "known_ransomware": True,
++                "short_description": "Apache Log4j2 contains a remote code execution vulnerability.",
++                "required_action": "Apply updates per vendor instructions.",
++                "notes": "",
++                "cwes": ["CWE-917", "CWE-20"],
++            },
++            "epss": {
++                "score": 0.99999,
++                "percentile": 1.0,
++                "score_date": "Nov 22, 2026",
++                "model_version": "v2026.06.15",
++            },
++        }
++    ],
++    "kev": True,
++    "kev_cves": ["CVE-2021-44228"],
++    "kev_ransomware": True,
++    "kev_due_date": "Dec 24, 2021",
++    "epss_max": 0.99999,
++    "epss_max_percentile": 1.0,
++    "epss_max_cve": "CVE-2021-44228",
++    "epss_over_threshold": True,
++}
++
++SAMPLE_REPORT = {
++    "cves": ["CVE-2021-44228"],
++    "kev_cves": ["CVE-2021-44228"],
++    "kev_catalog_version": "2026.11.20",
++    "kev_released": "Nov 20, 2026",
++    "kev_updated": "Nov 22, 2026",
++    "epss_score_date": "Nov 22, 2026",
++    "epss_model_version": "v2026.06.15",
++    "epss_threshold": 0.1,
++}
++
++SAMPLE_TOTALS = {
++    "findings_kev": 1,
++    "findings_kev_ransomware": 1,
++    "findings_epss_over": 1,
++}
+diff --git a/ghostwriter/vulnintel/templates/vulnintel/snippets/cve_badges.html b/ghostwriter/vulnintel/templates/vulnintel/snippets/cve_badges.html
+new file mode 100644
+index 0000000..27f031a
+--- /dev/null
++++ b/ghostwriter/vulnintel/templates/vulnintel/snippets/cve_badges.html
+@@ -0,0 +1,20 @@
++{% load vulnintel_tags %}{% for row in rows %}
++  <span class="library-tag library-tag-neutral finding-cve-badge" title="CVE ID">
++    <i class="fas fa-bug" aria-hidden="true"></i>
++    <span>{{ row.cve }}</span>
++  </span>
++  {% if row.kev %}
++    <span class="library-tag library-tag-warning finding-kev-badge" data-bs-toggle="tooltip" title="{{ row.kev_title }}">
++      <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
++      <span>KEV</span>
++      <span class="visually-hidden">: {{ row.kev_title }}</span>
++    </span>
++  {% endif %}
++  {% if row.epss %}
++    <span class="library-tag {% if row.epss_high %}library-tag-warning{% else %}library-tag-neutral{% endif %} finding-epss-badge"
++          data-bs-toggle="tooltip" title="{{ row.epss_title }}">
++      <span>EPSS {{ row.epss.epss|percent }}</span>
++      <span class="visually-hidden">: {{ row.epss_title }}</span>
++    </span>
++  {% endif %}
++{% endfor %}
+diff --git a/ghostwriter/vulnintel/templatetags/__init__.py b/ghostwriter/vulnintel/templatetags/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ghostwriter/vulnintel/templatetags/vulnintel_tags.py b/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
+new file mode 100644
+index 0000000..c21b0f0
+--- /dev/null
++++ b/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
+@@ -0,0 +1,117 @@
++"""Template tags that show KEV and EPSS data next to findings' CVE IDs."""
++
++# Django Imports
++from django import template
++from django.utils.html import format_html
++from django.utils.safestring import mark_safe
++
++# Ghostwriter Libraries
++from ghostwriter.vulnintel.context import VulnIntelLookup
++
++register = template.Library()
++
++
++@register.simple_tag
++def vuln_intel_for(findings):
++    """
++    Return a lookup of KEV entries and EPSS scores for every CVE ID on ``findings``, an iterable of
++    library or report findings, so each row can show its badges without more queries.
++    """
++    return VulnIntelLookup.for_findings(findings)
++
++
++@register.simple_tag
++def finding_cve_lookup(finding):
++    """Return a lookup for one finding's CVE IDs."""
++    return VulnIntelLookup.for_findings([finding])
++
++
++@register.filter
++def percent(value, digits=1):
++    """Format a 0 to 1 score as a percentage, such as 0.97352 as ``97.4%``."""
++    try:
++        return f"{float(value) * 100:.{int(digits)}f}%"
++    except (TypeError, ValueError):
++        return ""
++
++
++def _kev_title(entry, lookup):
++    parts = [
++        (
++            f"In CISA's KEV catalog since {lookup.date_text(entry.date_added)}"
++            if entry.date_added
++            else "In CISA's KEV catalog"
++        )
++    ]
++    if entry.due_date:
++        parts.append(f"remediation due {lookup.date_text(entry.due_date)}")
++    if entry.known_ransomware:
++        parts.append("known ransomware use")
++    return "; ".join(parts)
++
++
++def _epss_title(score, lookup):
++    return (
++        f"EPSS {score.epss:.5f} ({percent(score.percentile)} percentile) on {lookup.date_text(score.score_date)}. "
++        "EPSS by FIRST.org"
++    )
++
++
++@register.inclusion_tag("vulnintel/snippets/cve_badges.html")
++def cve_intel_badges(cves, lookup):
++    """Show each CVE ID with its KEV and EPSS badges, for a finding's page."""
++    rows = []
++    for cve_id in cves:
++        entry, score = lookup.kev.get(cve_id), lookup.epss.get(cve_id)
++        rows.append(
++            {
++                "cve": cve_id,
++                "kev": entry,
++                "kev_title": _kev_title(entry, lookup) if entry else "",
++                "epss": score,
++                "epss_title": _epss_title(score, lookup) if score else "",
++                "epss_high": bool(score and score.epss >= lookup.threshold),
++            }
++        )
++    return {"rows": rows}
++
++
++@register.simple_tag
++def finding_intel_summary(cves, lookup):
++    """
++    Show one KEV badge and the highest EPSS score for a finding, for compact table rows. Built in
++    Python rather than with an included template, because long tables call it once per row. The
++    details are in each badge's tooltip.
++    """
++    facts = lookup.summary(cves)
++    kev_entries, top = facts["kev_entries"], facts["top"]
++    if not kev_entries and not top:
++        return ""
++    badges = []
++    if kev_entries:
++        ransomware = any(entry.known_ransomware for entry in kev_entries)
++        title = f"In CISA's KEV catalog: {', '.join(entry.cve_id for entry in kev_entries)}"
++        if facts["earliest_due"]:
++            title += f"; earliest remediation due {lookup.date_text(facts['earliest_due'])}"
++        if ransomware:
++            title += "; known ransomware use"
++        badges.append(
++            format_html(
++                '<span class="library-tag library-tag-warning finding-kev-badge" data-bs-toggle="tooltip" '
++                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>{}</span></span>',
++                title,
++                "KEV · Ransomware" if ransomware else "KEV",
++            )
++        )
++    if top:
++        title = f"Highest score among this finding's CVE IDs ({top.cve_id}). {_epss_title(top, lookup)}"
++        badges.append(
++            format_html(
++                '<span class="library-tag {} finding-epss-badge" data-bs-toggle="tooltip" title="{}">'
++                "<span>EPSS {}</span></span>",
++                "library-tag-warning" if facts["over_threshold"] else "library-tag-neutral",
++                title,
++                percent(top.epss),
++            )
++        )
++    return format_html('<span class="finding-intel-summary">{}</span>', mark_safe(" ".join(badges)))
+diff --git a/ghostwriter/vulnintel/tests/test_admin_and_commands.py b/ghostwriter/vulnintel/tests/test_admin_and_commands.py
+index d9154c3..48d7312 100644
+--- a/ghostwriter/vulnintel/tests/test_admin_and_commands.py
++++ b/ghostwriter/vulnintel/tests/test_admin_and_commands.py
+@@ -53,6 +53,7 @@ class ConfigurationAdminTests(TestCase):
+                 "epss_api_url": "https://api.first.org/data/v1/epss",
+                 "request_timeout": 60,
+                 "max_download_mb": 100,
++                "epss_threshold": 0.1,
+             },
+         )
+         self.assertEqual(response.status_code, 302)
+@@ -71,6 +72,7 @@ class ConfigurationAdminTests(TestCase):
+                 "epss_api_url": "https://api.first.org/data/v1/epss",
+                 "request_timeout": 60,
+                 "max_download_mb": 100,
++                "epss_threshold": 0.1,
+             },
+         )
+         self.assertEqual(response.status_code, 200)
+diff --git a/ghostwriter/vulnintel/tests/test_context.py b/ghostwriter/vulnintel/tests/test_context.py
+new file mode 100644
+index 0000000..f6567f0
+--- /dev/null
++++ b/ghostwriter/vulnintel/tests/test_context.py
+@@ -0,0 +1,230 @@
++"""Tests for KEV and EPSS data in the report data, the template linter, and pages."""
++
++# Standard Libraries
++from datetime import date
++
++# Django Imports
++from django.test import TestCase, override_settings
++from django.urls import reverse
++
++# Ghostwriter Libraries
++from ghostwriter.factories import (
++    FindingFactory,
++    MgrFactory,
++    ReportFactory,
++    ReportFindingLinkFactory,
++)
++from ghostwriter.modules.custom_serializers import ReportDataSerializer
++from ghostwriter.modules.linting_utils import LINTER_CONTEXT
++from ghostwriter.vulnintel.context import VulnIntelLookup, add_report_vuln_intel
++from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability, VulnIntelConfiguration
++from ghostwriter.vulnintel.samples import SAMPLE_FINDING, SAMPLE_REPORT, SAMPLE_TOTALS
++from ghostwriter.vulnintel.templatetags.vulnintel_tags import percent
++
++PASSWORD = "SuperNaturalReporting!"
++
++
++def seed():
++    KnownExploitedVulnerability.objects.create(
++        cve_id="CVE-2021-44228",
++        vendor="Apache",
++        product="Log4j2",
++        name="Apache Log4j2 Remote Code Execution Vulnerability",
++        date_added=date(2021, 12, 10),
++        due_date=date(2021, 12, 24),
++        known_ransomware=True,
++        required_action="Apply updates per vendor instructions.",
++        cwes=["CWE-917"],
++    )
++    KnownExploitedVulnerability.objects.create(
++        cve_id="CVE-2021-45046", date_added=date(2023, 5, 1), due_date=date(2023, 5, 22)
++    )
++    # Removed from the catalog, so it no longer counts
++    KnownExploitedVulnerability.objects.create(
++        cve_id="CVE-2014-0160", date_added=date(2022, 5, 1), removed_on=date(2026, 1, 1)
++    )
++    EpssScore.objects.create(cve_id="CVE-2021-44228", epss=0.99999, percentile=1.0, score_date=date(2026, 11, 22))
++    EpssScore.objects.create(cve_id="CVE-2021-45046", epss=0.99, percentile=0.998, score_date=date(2026, 11, 22))
++    EpssScore.objects.create(cve_id="CVE-2023-0001", epss=0.02, percentile=0.8, score_date=date(2026, 11, 22))
++
++
++@override_settings(DATE_FORMAT="Y-m-d")
++class VulnIntelLookupTests(TestCase):
++    def setUp(self):
++        seed()
++
++    def test_finding_context(self):
++        lookup = VulnIntelLookup(["CVE-2021-45046", "CVE-2021-44228", "CVE-2014-0160", "CVE-2099-0001"], threshold=0.1)
++        context = lookup.finding_context(["CVE-2014-0160", "CVE-2021-44228", "CVE-2021-45046", "CVE-2099-0001"])
++        self.assertTrue(context["kev"])
++        self.assertEqual(context["kev_cves"], ["CVE-2021-44228", "CVE-2021-45046"])
++        self.assertTrue(context["kev_ransomware"])
++        self.assertEqual(context["kev_due_date"], "2021-12-24")
++        self.assertEqual(context["epss_max"], 0.99999)
++        self.assertEqual(context["epss_max_percentile"], 1.0)
++        self.assertEqual(context["epss_max_cve"], "CVE-2021-44228")
++        self.assertTrue(context["epss_over_threshold"])
++        self.assertEqual(
++            [entry["cve"] for entry in context["vuln_intel"]],
++            ["CVE-2014-0160", "CVE-2021-44228", "CVE-2021-45046", "CVE-2099-0001"],
++        )
++        heartbleed, log4shell, _, unknown = context["vuln_intel"]
++        self.assertIsNone(heartbleed["kev"])
++        self.assertEqual(log4shell["kev"]["due_date"], "2021-12-24")
++        self.assertEqual(log4shell["kev"]["required_action"], "Apply updates per vendor instructions.")
++        self.assertEqual(
++            log4shell["epss"], {"score": 0.99999, "percentile": 1.0, "score_date": "2026-11-22", "model_version": ""}
++        )
++        self.assertEqual(unknown, {"cve": "CVE-2099-0001", "kev": None, "epss": None})
++
++    def test_finding_without_data(self):
++        context = VulnIntelLookup(["CVE-2023-0001"], threshold=0.1).finding_context(["CVE-2023-0001"])
++        self.assertFalse(context["kev"])
++        self.assertEqual(context["kev_cves"], [])
++        self.assertEqual(context["kev_due_date"], "")
++        self.assertEqual(context["epss_max"], 0.02)
++        self.assertFalse(context["epss_over_threshold"])
++        empty = VulnIntelLookup([], threshold=0.1).finding_context([])
++        self.assertIsNone(empty["epss_max"])
++        self.assertEqual(empty["vuln_intel"], [])
++
++    def test_threshold_comes_from_the_configuration(self):
++        config = VulnIntelConfiguration.get_solo()
++        config.epss_threshold = 0.01
++        config.save()
++        self.assertTrue(VulnIntelLookup(["CVE-2023-0001"]).finding_context(["CVE-2023-0001"])["epss_over_threshold"])
++
++
++@override_settings(DATE_FORMAT="Y-m-d")
++class ReportDataTests(TestCase):
++    def setUp(self):
++        seed()
++        config = VulnIntelConfiguration.get_solo()
++        config.kev_catalog_version = "2026.11.20"
++        config.epss_score_date = date(2026, 11, 22)
++        config.epss_model_version = "v2026.06.15"
++        config.save()
++        self.report = ReportFactory()
++        ReportFindingLinkFactory(report=self.report, cves=["CVE-2021-44228"])
++        ReportFindingLinkFactory(report=self.report, cves=["CVE-2023-0001", "CVE-2021-45046"])
++        ReportFindingLinkFactory(report=self.report, cves=[])
++
++    def test_serializer_adds_finding_keys_report_keys_and_totals(self):
++        data = ReportDataSerializer(self.report, exclude=["id"]).data
++        by_cves = {tuple(finding["cves"]): finding for finding in data["findings"]}
++        log4shell = by_cves[("CVE-2021-44228",)]
++        self.assertTrue(log4shell["kev"])
++        self.assertTrue(log4shell["kev_ransomware"])
++        mixed = by_cves[("CVE-2021-45046", "CVE-2023-0001")]
++        self.assertEqual(mixed["kev_cves"], ["CVE-2021-45046"])
++        self.assertEqual(mixed["epss_max_cve"], "CVE-2021-45046")
++        self.assertFalse(by_cves[()]["kev"])
++        self.assertEqual(
++            data["vuln_intel"],
++            {
++                "cves": ["CVE-2021-44228", "CVE-2021-45046", "CVE-2023-0001"],
++                "kev_cves": ["CVE-2021-44228", "CVE-2021-45046"],
++                "kev_catalog_version": "2026.11.20",
++                "kev_released": "",
++                "kev_updated": "",
++                "epss_score_date": "2026-11-22",
++                "epss_model_version": "v2026.06.15",
++                "epss_threshold": 0.1,
++            },
++        )
++        self.assertEqual(data["totals"]["findings_kev"], 2)
++        self.assertEqual(data["totals"]["findings_kev_ransomware"], 1)
++        self.assertEqual(data["totals"]["findings_epss_over"], 2)
++        # The existing totals are untouched
++        self.assertEqual(data["totals"]["findings"], 3)
++
++    def test_report_without_findings(self):
++        rep = add_report_vuln_intel({"findings": [], "totals": {}})
++        self.assertEqual(rep["vuln_intel"]["cves"], [])
++        self.assertEqual(rep["totals"]["findings_kev"], 0)
++
++
++class LinterSampleTests(TestCase):
++    """Templates that use the new keys must lint, so the samples must match the real data."""
++
++    def test_samples_have_the_real_keys(self):
++        seed()
++        lookup = VulnIntelLookup(["CVE-2021-44228"], threshold=0.1)
++        real = lookup.finding_context(["CVE-2021-44228"])
++        self.assertEqual(set(SAMPLE_FINDING), set(real))
++        self.assertEqual(set(SAMPLE_FINDING["vuln_intel"][0]), set(real["vuln_intel"][0]))
++        self.assertEqual(set(SAMPLE_FINDING["vuln_intel"][0]["kev"]), set(real["vuln_intel"][0]["kev"]))
++        self.assertEqual(set(SAMPLE_FINDING["vuln_intel"][0]["epss"]), set(real["vuln_intel"][0]["epss"]))
++        rep = add_report_vuln_intel({"findings": [], "totals": {}})
++        self.assertEqual(set(SAMPLE_REPORT), set(rep["vuln_intel"]))
++        self.assertEqual(set(SAMPLE_TOTALS), set(rep["totals"]))
++
++    def test_linter_context_includes_the_samples(self):
++        self.assertTrue(LINTER_CONTEXT["findings"][0]["kev"])
++        self.assertEqual(LINTER_CONTEXT["vuln_intel"]["epss_threshold"], 0.1)
++        self.assertEqual(LINTER_CONTEXT["totals"]["findings_kev"], 1)
++
++
++class PercentFilterTests(TestCase):
++    def test_percent(self):
++        self.assertEqual(percent(0.97352), "97.4%")
++        self.assertEqual(percent(1.0, 0), "100%")
++        self.assertEqual(percent(None), "")
++        self.assertEqual(percent("bad"), "")
++
++
++class PageTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.user = MgrFactory(password=PASSWORD)
++
++    def setUp(self):
++        seed()
++        self.client.login(username=self.user.username, password=PASSWORD)
++
++    def test_finding_page_shows_kev_and_epss_badges(self):
++        finding = FindingFactory(cves=["CVE-2021-44228", "CVE-2023-0001"])
++        response = self.client.get(reverse("reporting:finding_detail", kwargs={"pk": finding.pk}))
++        self.assertEqual(response.status_code, 200)
++        self.assertContains(response, "finding-kev-badge", count=1)
++        self.assertContains(response, "known ransomware use")
++        self.assertContains(response, "EPSS 100.0%")
++        self.assertContains(response, "EPSS 2.0%")
++        self.assertContains(response, "EPSS by FIRST.org")
++
++    def test_finding_page_without_cves(self):
++        finding = FindingFactory(cves=[])
++        response = self.client.get(reverse("reporting:finding_detail", kwargs={"pk": finding.pk}))
++        self.assertEqual(response.status_code, 200)
++        self.assertNotContains(response, "finding-kev-badge")
++        self.assertNotContains(response, "finding-epss-badge")
++
++    def test_library_list_summarises_each_finding(self):
++        FindingFactory(title="Log4Shell finding", cves=["CVE-2021-44228"])
++        FindingFactory(title="Low EPSS finding", cves=["CVE-2023-0001"])
++        response = self.client.get(reverse("reporting:findings"))
++        self.assertEqual(response.status_code, 200)
++        self.assertContains(response, "KEV · Ransomware")
++        self.assertContains(response, "EPSS 2.0%")
++
++    def test_report_findings_table_summarises_each_finding(self):
++        report = ReportFactory()
++        ReportFindingLinkFactory(report=report, cves=["CVE-2021-45046", "CVE-2023-0001"])
++        response = self.client.get(reverse("reporting:report_detail", kwargs={"pk": report.pk}))
++        self.assertEqual(response.status_code, 200)
++        self.assertContains(response, "finding-kev-badge")
++        self.assertContains(response, "EPSS 99.0%")
++        self.assertContains(response, "Highest score among this finding")
++
++    def test_one_lookup_serves_every_row(self):
++        from ghostwriter.reporting.models import Finding
++
++        for n in range(20):
++            FindingFactory(cves=[f"CVE-2023-{n:04d}", "CVE-2021-44228"])
++        findings = list(Finding.objects.all())
++        # The KEV entries, the EPSS scores, and the configuration, whatever the number of findings
++        with self.assertNumQueries(3):
++            lookup = VulnIntelLookup.for_findings(findings)
++        with self.assertNumQueries(0):
++            for finding in findings:
++                lookup.finding_context(finding.cve_ids)
+diff --git a/ghostwriter/vulnintel/tests/test_feeds.py b/ghostwriter/vulnintel/tests/test_feeds.py
+index f68a691..60c3b85 100644
+--- a/ghostwriter/vulnintel/tests/test_feeds.py
++++ b/ghostwriter/vulnintel/tests/test_feeds.py
+@@ -86,6 +86,18 @@ class ParseKevTests(SimpleTestCase):
+             with self.assertRaises(FeedError):
+                 parse_kev(data)
+ 
++    def test_release_dates_with_any_fraction_length(self):
++        for released, microsecond in (
++            ("2026-11-20T17:48:39.1516Z", 151600),
++            ("2026-11-20T17:48:39.1Z", 100000),
++            ("2026-11-20T17:48:39.12345678Z", 123456),
++            ("2026-11-20T17:48:39Z", 0),
++        ):
++            catalog = parse_kev(
++                kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")], released=released)
++            )
++            self.assertEqual(catalog.released_at, datetime(2026, 11, 20, 17, 48, 39, microsecond, tzinfo=timezone.utc))
++
+     def test_tolerates_missing_release_date(self):
+         catalog = parse_kev(
+             kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")], released="not a date")
+diff --git a/ghostwriter/vulnintel/xlsx.py b/ghostwriter/vulnintel/xlsx.py
+new file mode 100644
+index 0000000..e8e08ed
+--- /dev/null
++++ b/ghostwriter/vulnintel/xlsx.py
+@@ -0,0 +1,22 @@
++"""KEV and EPSS columns for the Excel report."""
++
++HEADERS = ["KEV", "KEV Due Date", "Known Ransomware Use", "Highest EPSS", "EPSS Percentile"]
++
++
++def write_cells(workbook, worksheet, row, col, finding, text_format, cache):
++    """Write a finding's KEV and EPSS columns starting at ``col`` and return the next column."""
++    if "percent" not in cache:
++        percent = workbook.add_format({"num_format": "0.00%"})
++        percent.set_align("vcenter")
++        cache["percent"] = percent
++
++    worksheet.write_string(row, col, ", ".join(finding.get("kev_cves") or []), text_format)
++    worksheet.write_string(row, col + 1, finding.get("kev_due_date") or "", text_format)
++    worksheet.write_string(row, col + 2, "Yes" if finding.get("kev_ransomware") else "", text_format)
++    for offset, key in ((3, "epss_max"), (4, "epss_max_percentile")):
++        value = finding.get(key)
++        if isinstance(value, (int, float)):
++            worksheet.write_number(row, col + offset, value, cache["percent"])
++        else:
++            worksheet.write_string(row, col + offset, "", text_format)
++    return col + len(HEADERS)
