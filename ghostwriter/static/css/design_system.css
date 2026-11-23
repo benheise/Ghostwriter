@@ -13496,3 +13496,38 @@ a.report-item-title {
     transform: none;
   }
 }
+
+/* benheise/Ghostwriter: KEV and EPSS badges beside the CVSS score in the report findings table. Each badge wraps
+   on its own, so a long set takes a second line under the score rather than running into the next column. */
+.report-findings-table .report-score-column {
+  width: 14rem;
+}
+
+.report-score-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.report-score-stack .finding-intel-summary {
+  display: contents;
+}
+
+@container findings-table (max-width: 66.999rem) {
+  .report-findings-table .report-item-row {
+    grid-template-columns: 2.25rem auto minmax(5.5rem, 1fr) auto;
+  }
+}
+
+/* On narrow screens the owner joins the status line, so the score line has the full width for its badges */
+@container findings-table (max-width: 34rem) {
+  .report-findings-table .report-item-row {
+    grid-template-areas:
+      "drag title actions"
+      "drag status owner"
+      "drag score score";
+    grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+  }
+}

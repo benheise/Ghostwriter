@@ -63,9 +63,9 @@
                    data-bs-toggle="tooltip" data-bs-placement="top"
                    title="Started as a blank finding rather than a library template"></i>
               {% endif %}
-              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
             </td>
             <td class="align-middle text-start">
+              <div class="report-score-stack">
               {% if finding.cvss_score %}
                 <span class="report-score-badge
                   {% if finding.severity.weight == 1 %}cvss-critical
@@ -78,6 +78,8 @@
                   title="{{ finding.cvss_vector }}"
                 >{{ finding.cvss_score }}</span>
               {% else %}<span class="missing-value">Not scored</span>{% endif %}
+              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
+              </div>
             </td>
             {% if finding.assigned_to == request.user %}
               <td class="align-middle text-start">

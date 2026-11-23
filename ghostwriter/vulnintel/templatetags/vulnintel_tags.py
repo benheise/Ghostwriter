@@ -98,11 +98,19 @@ def finding_intel_summary(cves, lookup):
         badges.append(
             format_html(
                 '<span class="library-tag library-tag-warning finding-kev-badge" data-bs-toggle="tooltip" '
-                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>{}</span></span>',
+                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>KEV</span></span>',
                 title,
-                "KEV · Ransomware" if ransomware else "KEV",
             )
         )
+        if ransomware:
+            # A badge of its own, so the badges stay short enough to wrap beside a CVSS score
+            badges.append(
+                format_html(
+                    '<span class="library-tag library-tag-danger finding-ransomware-badge" data-bs-toggle="tooltip" '
+                    'title="{}"><span>Ransomware</span></span>',
+                    "Known use in ransomware campaigns, according to CISA's KEV catalog",
+                )
+            )
     if top:
         title = f"Highest score among this finding's CVE IDs ({top.cve_id}). {_epss_title(top, lookup)}"
         badges.append(

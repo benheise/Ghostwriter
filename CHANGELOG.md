@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added KEV and EPSS data for each finding's CVE IDs to reports and finding pages
   * Report templates get `finding.kev`, `kev_cves`, `kev_due_date`, `kev_ransomware`, `epss_max`, `epss_max_percentile`, `epss_max_cve`, `epss_over_threshold`, and a per-CVE `vuln_intel` list, plus a report-level `vuln_intel` with the dates the data was current and three new `totals`; the template linter knows them all
   * The Excel report adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS, and EPSS Percentile columns
-  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge and the highest EPSS score per finding
+  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge (plus a Ransomware badge when CISA records ransomware use) and the highest EPSS score per finding; in the report findings table they sit beside the CVSS score rather than after the title
   * A new EPSS threshold setting (10% by default) highlights high scores and sets `totals.findings_epss_over`
   * Every KEV and EPSS date also comes in `YYYY-MM-DD` form, in a key ending in `_iso` (such as `finding.kev_due_date_iso`), so templates can compare dates whatever the server's date format
 

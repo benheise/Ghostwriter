@@ -222,7 +222,8 @@ class PageTests(TestCase):
         FindingFactory(title="Low EPSS finding", cves=["CVE-2023-0001"])
         response = self.client.get(reverse("reporting:findings"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "KEV · Ransomware")
+        self.assertContains(response, "finding-kev-badge")
+        self.assertContains(response, "<span>Ransomware</span>")
         self.assertContains(response, "EPSS 2.0%")
 
     def test_report_findings_table_summarises_each_finding(self):
