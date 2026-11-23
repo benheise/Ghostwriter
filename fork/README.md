@@ -119,13 +119,27 @@ out the unpatched release and rebuild, or go back to the pre-built images with G
 
 `master` never gets force-pushed. For each upstream release:
 
-1. Merge the release tag, with GhostManager/Ghostwriter as the `upstream` remote: `git fetch upstream --tags && git merge vX.Y.Z`. Resolve conflicts, keeping upstream's
-   behaviour unless one of the fork's changes depends on it.
-2. Run the checks the upstream CI runs: the Django test suite, `npm run check` in `javascript/`, and `npm run codegen`
-   against a Hasura instance running the merged metadata, if the GraphQL schema changed.
+1. Merge the release tag, with GhostManager/Ghostwriter as the `upstream` remote:
+   `git fetch upstream --tags && git merge --no-ff vX.Y.Z`. Resolve conflicts, keeping upstream's behaviour unless one
+   of the fork's changes depends on it. If upstream added a migration to an app where the fork has its own, never
+   rename either one: installs that applied the patches have recorded the fork's migration names. Add a merge
+   migration instead (`python manage.py makemigrations --merge`) in a regular commit after the merge commit, so the
+   patch set picks it up.
+2. Run the checks upstream CI runs. They need only Docker, Node and Python:
+   * `fork/run-tests.sh` checks for missing migrations, then runs the Django suite in the upstream images for the
+     version in `VERSION`, with CI's environment.
+   * `fork/codegen.sh` applies the migrations, starts Hasura with the merged metadata and confirms it is consistent,
+     regenerates `javascript/src/__generated__`, and runs `npm run check` and the collaboration GraphQL authorization
+     test. Commit any regenerated files.
 3. Build the patch set: `fork/make-patches.sh vX.Y.Z`. It cherry-picks the fork's own commits onto a clean copy of the
-   upstream tag, so a patch that no longer applies fails here rather than for users.
+   upstream tag, so a patch that no longer applies fails here rather than for users. If a commit no longer
+   cherry-picks cleanly because the merge had to resolve a conflict in it, `fork/make-patches.sh --combined-only
+   vX.Y.Z` publishes just the combined patch, taken from the merged tree.
 4. Commit the new `fork/patches/vX.Y.Z/` directory with the merge and push `master`. Optionally, tag the commit
    `vX.Y.Z-benheise.N` and publish a GitHub release that links to the directory.
 
 Commits that touch only `fork/` or this note in `README.md` stay out of the patches.
+
+A daily scheduled task follows these steps whenever GhostManager publishes a release. If the merge needs a design
+decision or the checks fail, it pushes the attempt to a `sync/vX.Y.Z` branch, leaves `master` alone, and reports what
+needs attention.
