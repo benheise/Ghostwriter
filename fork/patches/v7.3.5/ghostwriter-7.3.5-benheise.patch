@@ -1,8 +1,8 @@
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index cf25d45..66805a2 100644
+index cf25d45..10cd0da 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  
  ## [Unreleased]
  
@@ -14,6 +14,13 @@ index cf25d45..66805a2 100644
 +  * The IDs are available to report templates as `finding.cves`, in the JSON and Excel reports, in finding CSV imports and exports as a `cves` column, and through the GraphQL API
 +  * The findings library can be filtered and searched by CVE ID, shows the IDs on finding pages, and offers a hidden-by-default CVE IDs table column
 +  * The new `extract_cves` management command fills the field from CVE identifiers already written in findings' text
++* Added a local copy of the CISA KEV catalog and FIRST EPSS scores, refreshed on a schedule you set
++  * Both sources are off by default; the new Vulnerability Intelligence Configuration page enables them and sets the update frequency (every 6 or 12 hours, daily, weekly, or manual) and the time of day
++  * Saving the configuration creates, changes, or removes the Django Q schedule for the refresh, and the page shows the next run, the last results, and a Refresh Now button
++  * The whole KEV catalog is kept, with removed entries marked; EPSS scores are kept for the CVE IDs findings reference, and a CVE ID newly added to a finding is looked up through FIRST's API
++  * Downloads are checked for size, shape, and age, so a failed or truncated download never replaces stored data
++  * The `import_kev` and `import_epss` management commands load offline copies, and `refresh_vuln_intel` runs a refresh from the command line
++  * The data is available read-only in the admin panel and through GraphQL (`knownExploitedVulnerability` and `epssScore`) for the user and manager roles
 +
 +### Fixed
 +
@@ -59,6 +66,89 @@ index d077f6e..644668e 100644
  
  That translates into a string like this:
  
+diff --git a/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx b/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx
+new file mode 100644
+index 0000000..23a6eed
+--- /dev/null
++++ b/DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx
+@@ -0,0 +1,63 @@
++---
++title: "Configuring Vulnerability Intelligence"
++description: "Keeping a local copy of the CISA KEV catalog and FIRST EPSS scores"
++---
++
++Ghostwriter can keep a local copy of two public sources of vulnerability intelligence, so the CVE IDs on your findings can be checked against them:
++
++* **CISA's Known Exploited Vulnerabilities (KEV) catalog**: vulnerabilities CISA knows are exploited in the wild, with the date each was added, the remediation due date for US federal agencies, the required action, and whether it is known to be used in ransomware campaigns.
++* **FIRST's Exploit Prediction Scoring System (EPSS)**: for each CVE, the probability of exploitation activity in the next 30 days, and its percentile among all scored CVEs. Scores change daily.
++
++Both sources are off by default. Ghostwriter makes no requests to them until an administrator enables one.
++
++<Info>
++This feature is part of the benheise/Ghostwriter fork and its patches. It is not in upstream Ghostwriter.
++</Info>
++
++## Enabling the Sources
++
++Open the admin panel and go to **Vulnerability Intelligence > Vulnerability Intelligence Configuration**.
++
++| Setting | Default | What it does |
++|---------|---------|--------------|
++| Download the CISA KEV Catalog | Off | Keeps the whole catalog, about 1,800 entries. Entries CISA removes are kept and marked with the date they disappeared |
++| Download EPSS Scores | Off | Keeps scores only for the CVE IDs your library and report findings reference, so the table stays small |
++| Update Frequency | Daily | Disabled (refresh manually), every 6 hours, every 12 hours, daily, or weekly. EPSS publishes once a day, so refreshing more often only helps KEV |
++| Run Time (UTC) | 14:00 | When daily and weekly refreshes run, and where the 6- and 12-hour cycle starts. FIRST publishes each day's scores at about 13:30 UTC |
++
++Saving the page creates, changes, or removes a Django Q schedule named **Refresh Vulnerability Intelligence**. The page shows the next refresh time. The configuration page is authoritative: if you edit that schedule in the Django Q admin, the next save of the configuration replaces your edit. If someone deletes the schedule, the page says so, and saving it restores the schedule.
++
++Use **Refresh Now** at the top of the page to queue a refresh immediately. The **Status** section shows when each source last updated, the KEV catalog version, the EPSS score date and model version, how many entries are stored, and the errors from the last run.
++
++When EPSS is enabled and a finding gains a CVE ID that has no score yet, Ghostwriter asks FIRST's EPSS API for just that CVE in the background, so the score appears without waiting for the next refresh. Refreshes always use FIRST's daily file rather than the API, as FIRST asks.
++
++## How Refreshes Protect Your Data
++
++A refresh never replaces good data with bad data:
++
++* Downloads use HTTPS with certificate verification, honour the server's proxy settings, and stop at the **Request Timeout** and **Maximum Download Size** limits. The size limit also applies to the decompressed EPSS file.
++* A catalog with fewer than 1,000 usable entries, or a scores file with fewer than 100,000 rows, is treated as truncated and rejected.
++* A KEV catalog released before the stored one, or EPSS scores dated before the stored ones, are rejected.
++* Each source runs separately. If one fails, the other still updates, and the failure appears under **Last Errors**.
++
++## Restricted Networks
++
++If the server cannot reach CISA or FIRST, point the feed URLs at an internal mirror (they must use `https://`), or load files you copy in yourself:
++
++```bash
++docker compose -f production.yml run --rm django python manage.py import_kev /path/to/known_exploited_vulnerabilities.json
++docker compose -f production.yml run --rm django python manage.py import_epss /path/to/epss_scores-YYYY-MM-DD.csv.gz
++```
++
++Both commands apply the same checks as a scheduled refresh and work whether or not the sources are enabled. `import_epss` keeps only the scores for CVE IDs your findings reference. To run a refresh from the command line instead of the admin panel, use `python manage.py refresh_vuln_intel`.
++
++<Note>
++The refresh job is listed in `GHOSTWRITER_DJANGO_Q_SCHEDULE_TASKS`, and the EPSS lookup in `GHOSTWRITER_DJANGO_Q_INTERNAL_TASKS`. If a settings file in `production.d` replaces either dictionary, add those entries back or the jobs will be refused.
++</Note>
++
++## Where the Data Is Available
++
++* **Admin panel:** read-only, searchable lists of KEV entries and EPSS scores.
++* **GraphQL API:** the `knownExploitedVulnerability` and `epssScore` queries, for the user and manager roles. Look entries up by the finding's `cves`, for example `knownExploitedVulnerability(where: {cveId: {_in: $cves}})`. Service tokens do not have access to these tables.
++
++KEV data is published by CISA. EPSS is free to use, and FIRST asks that you credit it (first.org/epss) wherever you show the scores.
+diff --git a/DOCS/docs.json b/DOCS/docs.json
+index 9532ce0..23f704f 100644
+--- a/DOCS/docs.json
++++ b/DOCS/docs.json
+@@ -186,7 +186,8 @@
+                   "configuring-global-settings/configuring-apis/configuring-cloud-services"
+                 ]
+               },
+-              "configuring-global-settings/configuring-extra-fields"
++              "configuring-global-settings/configuring-extra-fields",
++              "configuring-global-settings/configuring-vulnerability-intelligence"
+             ]
+           },
+           {
 diff --git a/DOCS/features/findings-library/populating-the-findings-library.mdx b/DOCS/features/findings-library/populating-the-findings-library.mdx
 index b10e068..3335e38 100644
 --- a/DOCS/features/findings-library/populating-the-findings-library.mdx
@@ -1703,6 +1793,42 @@ zuKOo+A&|esyKNoSjf|mx)H8n>>JLBvSpfYNiii;4Kgywh(dqt*f`3+-egzE*1TKaL
 zx%ao}KQrpTLKhtZ^S-*r`q$O}y7)iS%D*BG1M(xu{2z>e=4XFJ1SSNgeM9vhj6XAc
 Z03f>Z`vS&bLEx(RkO#<kln?*_{tqxsD0~0_
 
+diff --git a/config/settings/base.py b/config/settings/base.py
+index 83cd3e5..109cfd9 100644
+--- a/config/settings/base.py
++++ b/config/settings/base.py
+@@ -125,6 +125,7 @@ LOCAL_APPS = [
+     "ghostwriter.singleton.apps.SingletonConfig",
+     "ghostwriter.api.apps.ApiConfig",
+     "ghostwriter.status.apps.StatusConfig",
++    "ghostwriter.vulnintel.apps.VulnIntelConfig",
+ ]
+ 
+ # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
+@@ -549,6 +550,14 @@ GHOSTWRITER_DJANGO_Q_SCHEDULE_TASKS = {
+         # Bound monitoring work and avoid displacing useful successful-job history.
+         "q_options": {"timeout": 30, "save": False, "ack_failure": True},
+     },
++    "ghostwriter.vulnintel.tasks.refresh_vulnerability_intel": {
++        "label": "Refresh Vulnerability Intelligence (KEV and EPSS)",
++        "args": [],
++        "kwargs": {},
++        # A missed refresh is replaced by the next one; running several late ones adds nothing.
++        "catch_up": False,
++        "q_options": {"timeout": 900},
++    },
+ }
+ 
+ # These tasks are queued by Ghostwriter itself. They are accepted by the queue
+@@ -560,6 +569,8 @@ GHOSTWRITER_DJANGO_Q_INTERNAL_TASKS = {
+     "ghostwriter.shepherd.tasks.test_namecheap": {"allow_any_arguments": True},
+     "ghostwriter.shepherd.tasks.test_slack_webhook": {"allow_any_arguments": True},
+     "ghostwriter.shepherd.tasks.test_virustotal": {"allow_any_arguments": True},
++    # Validates its own argument: a list of CVE IDs, cleaned before use
++    "ghostwriter.vulnintel.tasks.lookup_epss_scores": {"allow_any_arguments": True},
+ }
+ 
+ # Hooks have their own execution path in Django Q and must be independently
 diff --git a/ghostwriter/commandcenter/migrations/0055_reportconfiguration_filename_project_type.py b/ghostwriter/commandcenter/migrations/0055_reportconfiguration_filename_project_type.py
 new file mode 100644
 index 0000000..8a568d2
@@ -4556,6 +4682,2286 @@ index 79d3cf2..08c183f 100644
              extra_fields=finding.extra_fields,
  
              assigned_to=self.request.user,
+diff --git a/ghostwriter/vulnintel/__init__.py b/ghostwriter/vulnintel/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ghostwriter/vulnintel/admin.py b/ghostwriter/vulnintel/admin.py
+new file mode 100644
+index 0000000..63cbdf8
+--- /dev/null
++++ b/ghostwriter/vulnintel/admin.py
+@@ -0,0 +1,150 @@
++"""This contains customizations for displaying the Vulnerability Intelligence models in the admin panel."""
++
++# Django Imports
++from django.contrib import admin, messages
++from django.core.exceptions import PermissionDenied
++from django.http import HttpResponseNotAllowed, HttpResponseRedirect
++from django.urls import re_path, reverse
++
++# 3rd Party Libraries
++from django_q.tasks import async_task
++
++# Ghostwriter Libraries
++from ghostwriter.singleton.admin import SingletonModelAdmin
++from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability, VulnIntelConfiguration
++from ghostwriter.vulnintel.schedule import get_refresh_schedule
++from ghostwriter.vulnintel.tasks import REFRESH_TASK
++
++STATUS_FIELDS = (
++    "schedule_status",
++    "last_run_at",
++    "last_error",
++    "kev_synced_at",
++    "kev_catalog_version",
++    "kev_released_at",
++    "kev_count",
++    "epss_synced_at",
++    "epss_score_date",
++    "epss_model_version",
++    "epss_count",
++)
++
++
++@admin.register(VulnIntelConfiguration)
++class VulnIntelConfigurationAdmin(SingletonModelAdmin):
++    change_form_template = "vulnintel/admin_change_form.html"
++    readonly_fields = STATUS_FIELDS
++    fieldsets = (
++        (
++            "Sources",
++            {
++                "description": (
++                    "Ghostwriter makes no requests to these sources until you enable one. KEV data comes "
++                    "from CISA. EPSS scores come from FIRST (first.org/epss); credit FIRST wherever you "
++                    "show them."
++                ),
++                "fields": ("enable_kev", "enable_epss"),
++            },
++        ),
++        (
++            "Schedule",
++            {
++                "description": (
++                    "Saving this page sets the refresh schedule. Edits made to that schedule in the "
++                    "Django Q admin are replaced the next time this page is saved."
++                ),
++                "fields": ("update_frequency", "run_at", "schedule_status"),
++            },
++        ),
++        (
++            "Feeds and Limits",
++            {
++                "description": "Change the URLs only to point at an internal mirror of the same data.",
++                "classes": ("collapse",),
++                "fields": ("kev_feed_url", "epss_feed_url", "epss_api_url", "request_timeout", "max_download_mb"),
++            },
++        ),
++        (
++            "Status",
++            {
++                "fields": (
++                    "last_run_at",
++                    "last_error",
++                    ("kev_synced_at", "kev_catalog_version", "kev_released_at", "kev_count"),
++                    ("epss_synced_at", "epss_score_date", "epss_model_version", "epss_count"),
++                )
++            },
++        ),
++    )
++
++    @admin.display(description="Next Refresh")
++    def schedule_status(self, obj):
++        schedule = get_refresh_schedule()
++        if schedule is None:
++            if obj.any_source_enabled and obj.update_frequency != VulnIntelConfiguration.FREQUENCY_DISABLED:
++                return "No schedule found. Save this page to restore it."
++            return "Not scheduled"
++        if schedule.next_run is None:
++            return "Scheduled, with no next run set"
++        return f"{schedule.next_run:%Y-%m-%d %H:%M} UTC"
++
++    def get_urls(self):
++        info = (self.model._meta.app_label, self.model._meta.model_name)
++        return [
++            re_path(
++                r"^refresh/$",
++                self.admin_site.admin_view(self.refresh_view),
++                name="%s_%s_refresh" % info,
++            ),
++        ] + super().get_urls()
++
++    def refresh_view(self, request):
++        """Queue a refresh of the enabled sources now."""
++        if request.method != "POST":
++            return HttpResponseNotAllowed(["POST"])
++        if not self.has_change_permission(request):
++            raise PermissionDenied
++        change_url = reverse("admin:vulnintel_vulnintelconfiguration_change")
++        config = VulnIntelConfiguration.get_solo()
++        if not config.any_source_enabled:
++            self.message_user(request, "Enable at least one source before refreshing.", messages.WARNING)
++            return HttpResponseRedirect(change_url)
++        try:
++            async_task(REFRESH_TASK)
++        except Exception as exception:  # pylint: disable=broad-exception-caught
++            self.message_user(request, f"Could not queue the refresh: {exception}", messages.ERROR)
++        else:
++            self.message_user(
++                request,
++                "Refresh queued. Reload this page in a minute to see the result under Status.",
++                messages.SUCCESS,
++            )
++        return HttpResponseRedirect(change_url)
++
++
++class ReadOnlyAdmin(admin.ModelAdmin):
++    """The refresh job owns these tables, so the admin only shows them."""
++
++    def has_add_permission(self, request):
++        return False
++
++    def has_change_permission(self, request, obj=None):
++        return False
++
++    def has_delete_permission(self, request, obj=None):
++        return False
++
++
++@admin.register(KnownExploitedVulnerability)
++class KnownExploitedVulnerabilityAdmin(ReadOnlyAdmin):
++    list_display = ("cve_id", "vendor", "product", "date_added", "due_date", "known_ransomware", "removed_on")
++    list_filter = ("known_ransomware", ("removed_on", admin.EmptyFieldListFilter), "date_added")
++    search_fields = ("cve_id", "vendor", "product", "name")
++    date_hierarchy = "date_added"
++
++
++@admin.register(EpssScore)
++class EpssScoreAdmin(ReadOnlyAdmin):
++    list_display = ("cve_id", "epss", "percentile", "score_date", "model_version")
++    list_filter = ("score_date",)
++    search_fields = ("cve_id",)
+diff --git a/ghostwriter/vulnintel/apps.py b/ghostwriter/vulnintel/apps.py
+new file mode 100644
+index 0000000..32fb879
+--- /dev/null
++++ b/ghostwriter/vulnintel/apps.py
+@@ -0,0 +1,12 @@
++"""This contains the configuration of the Vulnerability Intelligence application."""
++
++# Django Imports
++from django.apps import AppConfig
++
++
++class VulnIntelConfig(AppConfig):
++    name = "ghostwriter.vulnintel"
++    verbose_name = "Vulnerability Intelligence"
++
++    def ready(self):
++        import ghostwriter.vulnintel.signals  # noqa F401 isort:skip
+diff --git a/ghostwriter/vulnintel/feeds.py b/ghostwriter/vulnintel/feeds.py
+new file mode 100644
+index 0000000..ed10f86
+--- /dev/null
++++ b/ghostwriter/vulnintel/feeds.py
+@@ -0,0 +1,233 @@
++"""Download and parse the CISA KEV catalog and FIRST EPSS scores."""
++
++# Standard Libraries
++import csv
++import gzip
++import io
++import json
++import re
++from dataclasses import dataclass, field
++from datetime import date, datetime, timezone
++from decimal import Decimal, InvalidOperation
++
++# 3rd Party Libraries
++import requests
++
++# Ghostwriter Libraries
++from ghostwriter.reporting.validators import CVE_ID_PATTERN
++
++# A real catalog has well over a thousand entries and a real scores file has hundreds of thousands
++# of rows, so anything much smaller is a truncated download or a changed format, not real data.
++MIN_KEV_ENTRIES = 1000
++MIN_EPSS_ROWS = 100000
++
++GZIP_MAGIC = b"\x1f\x8b"
++USER_AGENT = "Ghostwriter vulnerability intelligence (+https://github.com/benheise/Ghostwriter)"
++EPSS_HEADER = re.compile(r"model_version:(?P<model>[^,\s]+).*?score_date:(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})")
++
++
++class FeedError(Exception):
++    """A feed could not be downloaded or did not look like real data."""
++
++
++@dataclass
++class KevCatalog:
++    version: str
++    released_at: datetime | None
++    entries: list[dict] = field(default_factory=list)
++    skipped: int = 0
++
++
++@dataclass
++class EpssScores:
++    model_version: str
++    score_date: date
++    total_rows: int
++    scores: dict[str, tuple[float, float]] = field(default_factory=dict)
++
++
++def download(url, timeout, max_bytes):
++    """
++    Return the body of ``url`` as bytes.
++
++    TLS certificates are verified and the proxy settings in the environment are honoured. Raises
++    ``FeedError`` if the request fails, a redirect leaves HTTPS, or the body is larger than ``max_bytes``.
++    """
++    try:
++        with requests.get(url, timeout=timeout, stream=True, headers={"User-Agent": USER_AGENT}) as response:
++            if not response.url.lower().startswith("https://"):
++                raise FeedError(f"{url} redirected to a non-HTTPS address")
++            response.raise_for_status()
++            declared = response.headers.get("Content-Length")
++            if declared and declared.isdigit() and int(declared) > max_bytes:
++                raise FeedError(f"{url} is larger than the {max_bytes // (1024 * 1024)} MB limit")
++            body = bytearray()
++            for chunk in response.iter_content(chunk_size=65536):
++                body.extend(chunk)
++                if len(body) > max_bytes:
++                    raise FeedError(f"{url} is larger than the {max_bytes // (1024 * 1024)} MB limit")
++            return bytes(body)
++    except requests.RequestException as exception:
++        raise FeedError(f"Could not download {url}: {exception}") from exception
++
++
++def _parse_date(value):
++    if not value:
++        return None
++    try:
++        return date.fromisoformat(str(value)[:10])
++    except ValueError:
++        return None
++
++
++def _parse_datetime(value):
++    if not value:
++        return None
++    text = str(value).strip().replace("Z", "+00:00")
++    # Python wants at most six digits of fractional seconds
++    text = re.sub(r"(\.\d{6})\d+", r"\1", text)
++    try:
++        parsed = datetime.fromisoformat(text)
++    except ValueError:
++        return None
++    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
++
++
++def parse_kev(data):
++    """Parse CISA's KEV catalog (JSON) and return a ``KevCatalog``. Raises ``FeedError`` if it looks wrong."""
++    try:
++        document = json.loads(data)
++    except (ValueError, UnicodeDecodeError) as exception:
++        raise FeedError(f"The KEV catalog is not valid JSON: {exception}") from exception
++    if not isinstance(document, dict) or not isinstance(document.get("vulnerabilities"), list):
++        raise FeedError("The KEV catalog has no list of vulnerabilities")
++
++    catalog = KevCatalog(
++        version=str(document.get("catalogVersion") or "")[:64],
++        released_at=_parse_datetime(document.get("dateReleased")),
++    )
++    seen = set()
++    for item in document["vulnerabilities"]:
++        cve_id = str(item.get("cveID", "")).strip().upper() if isinstance(item, dict) else ""
++        if not CVE_ID_PATTERN.match(cve_id) or cve_id in seen:
++            catalog.skipped += 1
++            continue
++        seen.add(cve_id)
++        cwes = item.get("cwes")
++        catalog.entries.append(
++            {
++                "cve_id": cve_id,
++                "vendor": str(item.get("vendorProject") or "")[:255],
++                "product": str(item.get("product") or "")[:255],
++                "name": str(item.get("vulnerabilityName") or "")[:500],
++                "date_added": _parse_date(item.get("dateAdded")),
++                "due_date": _parse_date(item.get("dueDate")),
++                "known_ransomware": str(item.get("knownRansomwareCampaignUse") or "").strip().lower() == "known",
++                "short_description": str(item.get("shortDescription") or ""),
++                "required_action": str(item.get("requiredAction") or ""),
++                "notes": str(item.get("notes") or ""),
++                "cwes": [str(cwe) for cwe in cwes] if isinstance(cwes, list) else [],
++            }
++        )
++
++    if len(catalog.entries) < MIN_KEV_ENTRIES:
++        raise FeedError(
++            f"The KEV catalog has only {len(catalog.entries)} usable entries; "
++            f"expected at least {MIN_KEV_ENTRIES}, so it is probably truncated"
++        )
++    return catalog
++
++
++def _score(value):
++    """Return a score between 0 and 1 rounded to five places, as FIRST publishes them, or None."""
++    try:
++        number = Decimal(str(value).strip())
++    except (InvalidOperation, ValueError):
++        return None
++    if not number.is_finite() or number < 0 or number > 1:
++        return None
++    return float(number.quantize(Decimal("0.00001")))
++
++
++def parse_epss(data, wanted=None, max_bytes=None):
++    """
++    Parse FIRST's daily EPSS file (CSV, optionally gzipped) and return an ``EpssScores``.
++
++    Only the CVE IDs in ``wanted`` are kept, when it is given; every row still counts towards the
++    sanity check. ``max_bytes`` limits the decompressed size. Raises ``FeedError`` if it looks wrong.
++    """
++    if data[:2] == GZIP_MAGIC:
++        stream = gzip.GzipFile(fileobj=io.BytesIO(data))
++    else:
++        stream = io.BytesIO(data)
++    text = io.TextIOWrapper(stream, encoding="utf-8", errors="replace", newline="")
++
++    read = 0
++
++    def lines():
++        nonlocal read
++        try:
++            for line in text:
++                read += len(line)
++                if max_bytes and read > max_bytes:
++                    raise FeedError(
++                        f"The decompressed EPSS file is larger than the {max_bytes // (1024 * 1024)} MB limit"
++                    )
++                yield line
++        except (OSError, EOFError) as exception:
++            raise FeedError(f"The EPSS file could not be decompressed: {exception}") from exception
++
++    rows = lines()
++    first = next(rows, "")
++    match = EPSS_HEADER.search(first) if first.startswith("#") else None
++    if not match:
++        raise FeedError("The EPSS file does not start with its model version and score date")
++    header = next(rows, "").strip().lower()
++    if header.replace(" ", "") != "cve,epss,percentile":
++        raise FeedError("The EPSS file does not have the columns cve, epss and percentile")
++
++    result = EpssScores(
++        model_version=match.group("model")[:64],
++        score_date=date.fromisoformat(match.group("date")),
++        total_rows=0,
++    )
++    for record in csv.reader(rows):
++        if len(record) < 3:
++            continue
++        result.total_rows += 1
++        cve_id = record[0].strip().upper()
++        if wanted is not None and cve_id not in wanted:
++            continue
++        epss, percentile = _score(record[1]), _score(record[2])
++        if CVE_ID_PATTERN.match(cve_id) and epss is not None and percentile is not None:
++            result.scores[cve_id] = (epss, percentile)
++
++    if result.total_rows < MIN_EPSS_ROWS:
++        raise FeedError(
++            f"The EPSS file has only {result.total_rows} rows; "
++            f"expected at least {MIN_EPSS_ROWS}, so it is probably truncated"
++        )
++    return result
++
++
++def parse_epss_api(data):
++    """
++    Parse a response from FIRST's EPSS API and return ``{cve_id: (epss, percentile, score_date)}``.
++    Raises ``FeedError`` if the response is not a successful API answer.
++    """
++    try:
++        document = json.loads(data)
++    except (ValueError, UnicodeDecodeError) as exception:
++        raise FeedError(f"The EPSS API answer is not valid JSON: {exception}") from exception
++    if not isinstance(document, dict) or str(document.get("status", "")).upper() != "OK":
++        raise FeedError("The EPSS API did not answer OK")
++    scores = {}
++    for item in document.get("data") or []:
++        if not isinstance(item, dict):
++            continue
++        cve_id = str(item.get("cve", "")).strip().upper()
++        epss, percentile = _score(item.get("epss")), _score(item.get("percentile"))
++        score_date = _parse_date(item.get("date"))
++        if CVE_ID_PATTERN.match(cve_id) and epss is not None and percentile is not None and score_date:
++            scores[cve_id] = (epss, percentile, score_date)
++    return scores
+diff --git a/ghostwriter/vulnintel/management/__init__.py b/ghostwriter/vulnintel/management/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ghostwriter/vulnintel/management/commands/__init__.py b/ghostwriter/vulnintel/management/commands/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ghostwriter/vulnintel/management/commands/import_epss.py b/ghostwriter/vulnintel/management/commands/import_epss.py
+new file mode 100644
+index 0000000..9180873
+--- /dev/null
++++ b/ghostwriter/vulnintel/management/commands/import_epss.py
+@@ -0,0 +1,33 @@
++"""Load EPSS scores from a file, for servers that cannot reach FIRST."""
++
++# Django Imports
++from django.core.management.base import BaseCommand, CommandError
++
++# Ghostwriter Libraries
++from ghostwriter.vulnintel.feeds import FeedError
++from ghostwriter.vulnintel.models import VulnIntelConfiguration
++from ghostwriter.vulnintel.tasks import refresh_epss
++
++
++class Command(BaseCommand):
++    help = (
++        "Load EPSS scores from a copy of FIRST's daily file (epss_scores-YYYY-MM-DD.csv or .csv.gz), keeping "
++        "the scores for CVE IDs your findings reference. Works whether or not EPSS downloads are enabled."
++    )
++
++    def add_arguments(self, parser):
++        parser.add_argument("path", help="Path to the EPSS scores file")
++
++    def handle(self, *args, **options):
++        config = VulnIntelConfiguration.get_solo()
++        try:
++            with open(options["path"], "rb") as handle:
++                data = handle.read(config.max_download_bytes + 1)
++        except OSError as exception:
++            raise CommandError(f"Could not read {options['path']}: {exception}") from exception
++        if len(data) > config.max_download_bytes:
++            raise CommandError(f"{options['path']} is larger than the {config.max_download_mb} MB limit")
++        try:
++            self.stdout.write(refresh_epss(config, data=data))
++        except FeedError as exception:
++            raise CommandError(str(exception)) from exception
+diff --git a/ghostwriter/vulnintel/management/commands/import_kev.py b/ghostwriter/vulnintel/management/commands/import_kev.py
+new file mode 100644
+index 0000000..c180b20
+--- /dev/null
++++ b/ghostwriter/vulnintel/management/commands/import_kev.py
+@@ -0,0 +1,33 @@
++"""Load the CISA KEV catalog from a file, for servers that cannot reach CISA."""
++
++# Django Imports
++from django.core.management.base import BaseCommand, CommandError
++
++# Ghostwriter Libraries
++from ghostwriter.vulnintel.feeds import FeedError
++from ghostwriter.vulnintel.models import VulnIntelConfiguration
++from ghostwriter.vulnintel.tasks import refresh_kev
++
++
++class Command(BaseCommand):
++    help = (
++        "Load CISA's KEV catalog from a copy of known_exploited_vulnerabilities.json. Works whether or not "
++        "KEV downloads are enabled."
++    )
++
++    def add_arguments(self, parser):
++        parser.add_argument("path", help="Path to the KEV catalog JSON file")
++
++    def handle(self, *args, **options):
++        config = VulnIntelConfiguration.get_solo()
++        try:
++            with open(options["path"], "rb") as handle:
++                data = handle.read(config.max_download_bytes + 1)
++        except OSError as exception:
++            raise CommandError(f"Could not read {options['path']}: {exception}") from exception
++        if len(data) > config.max_download_bytes:
++            raise CommandError(f"{options['path']} is larger than the {config.max_download_mb} MB limit")
++        try:
++            self.stdout.write(refresh_kev(config, data=data))
++        except FeedError as exception:
++            raise CommandError(str(exception)) from exception
+diff --git a/ghostwriter/vulnintel/management/commands/refresh_vuln_intel.py b/ghostwriter/vulnintel/management/commands/refresh_vuln_intel.py
+new file mode 100644
+index 0000000..de7606b
+--- /dev/null
++++ b/ghostwriter/vulnintel/management/commands/refresh_vuln_intel.py
+@@ -0,0 +1,18 @@
++"""Refresh the enabled vulnerability intelligence sources now, without waiting for the schedule."""
++
++# Django Imports
++from django.core.management.base import BaseCommand, CommandError
++
++# Ghostwriter Libraries
++from ghostwriter.vulnintel.tasks import refresh_vulnerability_intel
++
++
++class Command(BaseCommand):
++    help = "Download and store the KEV catalog and EPSS scores now, for the sources enabled in the configuration."
++
++    def handle(self, *args, **options):
++        try:
++            summary = refresh_vulnerability_intel()
++        except RuntimeError as exception:
++            raise CommandError(str(exception)) from exception
++        self.stdout.write(summary)
+diff --git a/ghostwriter/vulnintel/migrations/0001_initial.py b/ghostwriter/vulnintel/migrations/0001_initial.py
+new file mode 100644
+index 0000000..cf83576
+--- /dev/null
++++ b/ghostwriter/vulnintel/migrations/0001_initial.py
+@@ -0,0 +1,232 @@
++# Generated by Django 5.2.14 on 2026-11-23 01:47
++
++import datetime
++import django.core.validators
++import ghostwriter.vulnintel.models
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    initial = True
++
++    dependencies = []
++
++    operations = [
++        migrations.CreateModel(
++            name="EpssScore",
++            fields=[
++                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
++                ("cve_id", models.CharField(max_length=32, unique=True, verbose_name="CVE ID")),
++                (
++                    "epss",
++                    models.FloatField(
++                        help_text="Probability of exploitation activity in the next 30 days, from 0 to 1",
++                        validators=[
++                            django.core.validators.MinValueValidator(0),
++                            django.core.validators.MaxValueValidator(1),
++                        ],
++                        verbose_name="EPSS Score",
++                    ),
++                ),
++                (
++                    "percentile",
++                    models.FloatField(
++                        help_text="Share of all scored CVEs with an equal or lower score, from 0 to 1",
++                        validators=[
++                            django.core.validators.MinValueValidator(0),
++                            django.core.validators.MaxValueValidator(1),
++                        ],
++                    ),
++                ),
++                ("score_date", models.DateField(verbose_name="Score Date")),
++                (
++                    "model_version",
++                    models.CharField(blank=True, default="", max_length=64, verbose_name="Model Version"),
++                ),
++                ("updated_at", models.DateTimeField(auto_now=True, verbose_name="Updated")),
++            ],
++            options={
++                "verbose_name": "EPSS score",
++                "verbose_name_plural": "EPSS scores",
++                "ordering": ["-epss", "cve_id"],
++            },
++        ),
++        migrations.CreateModel(
++            name="KnownExploitedVulnerability",
++            fields=[
++                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
++                ("cve_id", models.CharField(max_length=32, unique=True, verbose_name="CVE ID")),
++                ("vendor", models.CharField(blank=True, default="", max_length=255, verbose_name="Vendor or Project")),
++                ("product", models.CharField(blank=True, default="", max_length=255)),
++                ("name", models.CharField(blank=True, default="", max_length=500, verbose_name="Vulnerability Name")),
++                ("date_added", models.DateField(blank=True, null=True, verbose_name="Date Added")),
++                ("due_date", models.DateField(blank=True, null=True, verbose_name="Due Date")),
++                (
++                    "known_ransomware",
++                    models.BooleanField(
++                        default=False,
++                        help_text="CISA knows of this vulnerability being used in ransomware campaigns",
++                        verbose_name="Known Ransomware Use",
++                    ),
++                ),
++                ("short_description", models.TextField(blank=True, default="", verbose_name="Short Description")),
++                ("required_action", models.TextField(blank=True, default="", verbose_name="Required Action")),
++                ("notes", models.TextField(blank=True, default="")),
++                ("cwes", models.JSONField(blank=True, default=list, verbose_name="CWEs")),
++                (
++                    "removed_on",
++                    models.DateField(
++                        blank=True,
++                        help_text="The date this entry was no longer in CISA's catalog, which can happen when CISA corrects it",
++                        null=True,
++                        verbose_name="Removed On",
++                    ),
++                ),
++                ("updated_at", models.DateTimeField(auto_now=True, verbose_name="Updated")),
++            ],
++            options={
++                "verbose_name": "Known exploited vulnerability",
++                "verbose_name_plural": "Known exploited vulnerabilities",
++                "ordering": ["-date_added", "cve_id"],
++            },
++        ),
++        migrations.CreateModel(
++            name="VulnIntelConfiguration",
++            fields=[
++                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
++                (
++                    "enable_kev",
++                    models.BooleanField(
++                        default=False,
++                        help_text="Keep a local copy of CISA's Known Exploited Vulnerabilities catalog",
++                        verbose_name="Download the CISA KEV Catalog",
++                    ),
++                ),
++                (
++                    "enable_epss",
++                    models.BooleanField(
++                        default=False,
++                        help_text="Keep FIRST's EPSS scores for the CVE IDs your findings reference",
++                        verbose_name="Download EPSS Scores",
++                    ),
++                ),
++                (
++                    "update_frequency",
++                    models.CharField(
++                        choices=[
++                            ("disabled", "Disabled (refresh manually)"),
++                            ("6h", "Every 6 hours"),
++                            ("12h", "Every 12 hours"),
++                            ("daily", "Daily"),
++                            ("weekly", "Weekly"),
++                        ],
++                        default="daily",
++                        help_text="How often to refresh the enabled sources. EPSS publishes new scores once a day",
++                        max_length=16,
++                        verbose_name="Update Frequency",
++                    ),
++                ),
++                (
++                    "run_at",
++                    models.TimeField(
++                        default=datetime.time(14, 0),
++                        help_text="Time of day, in UTC, for daily and weekly refreshes, and the starting point for 6- and 12-hour refreshes. FIRST publishes each day's EPSS scores at about 13:30 UTC",
++                        verbose_name="Run Time (UTC)",
++                    ),
++                ),
++                (
++                    "kev_feed_url",
++                    models.URLField(
++                        default="https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
++                        help_text="CISA's KEV catalog in JSON, or an internal mirror of it",
++                        max_length=500,
++                        validators=[ghostwriter.vulnintel.models.validate_https_url],
++                        verbose_name="KEV Feed URL",
++                    ),
++                ),
++                (
++                    "epss_feed_url",
++                    models.URLField(
++                        default="https://epss.empiricalsecurity.com/epss_scores-current.csv.gz",
++                        help_text="FIRST's daily EPSS scores file (CSV, optionally gzipped), or an internal mirror of it",
++                        max_length=500,
++                        validators=[ghostwriter.vulnintel.models.validate_https_url],
++                        verbose_name="EPSS Feed URL",
++                    ),
++                ),
++                (
++                    "epss_api_url",
++                    models.URLField(
++                        default="https://api.first.org/data/v1/epss",
++                        help_text="FIRST's EPSS API, used only to look up scores for CVE IDs newly added to findings",
++                        max_length=500,
++                        validators=[ghostwriter.vulnintel.models.validate_https_url],
++                        verbose_name="EPSS API URL",
++                    ),
++                ),
++                (
++                    "request_timeout",
++                    models.PositiveIntegerField(
++                        default=60,
++                        help_text="Give up on a download that takes longer than this",
++                        validators=[
++                            django.core.validators.MinValueValidator(5),
++                            django.core.validators.MaxValueValidator(600),
++                        ],
++                        verbose_name="Request Timeout (Seconds)",
++                    ),
++                ),
++                (
++                    "max_download_mb",
++                    models.PositiveIntegerField(
++                        default=100,
++                        help_text="Refuse a download, or a decompressed file, larger than this",
++                        validators=[
++                            django.core.validators.MinValueValidator(1),
++                            django.core.validators.MaxValueValidator(1024),
++                        ],
++                        verbose_name="Maximum Download Size (MB)",
++                    ),
++                ),
++                ("last_run_at", models.DateTimeField(blank=True, editable=False, null=True, verbose_name="Last Run")),
++                ("last_error", models.TextField(blank=True, default="", editable=False, verbose_name="Last Errors")),
++                (
++                    "kev_synced_at",
++                    models.DateTimeField(blank=True, editable=False, null=True, verbose_name="KEV Last Updated"),
++                ),
++                (
++                    "kev_catalog_version",
++                    models.CharField(
++                        blank=True, default="", editable=False, max_length=64, verbose_name="KEV Catalog Version"
++                    ),
++                ),
++                (
++                    "kev_released_at",
++                    models.DateTimeField(blank=True, editable=False, null=True, verbose_name="KEV Catalog Released"),
++                ),
++                ("kev_count", models.PositiveIntegerField(default=0, editable=False, verbose_name="KEV Entries")),
++                (
++                    "epss_synced_at",
++                    models.DateTimeField(blank=True, editable=False, null=True, verbose_name="EPSS Last Updated"),
++                ),
++                (
++                    "epss_score_date",
++                    models.DateField(blank=True, editable=False, null=True, verbose_name="EPSS Score Date"),
++                ),
++                (
++                    "epss_model_version",
++                    models.CharField(
++                        blank=True, default="", editable=False, max_length=64, verbose_name="EPSS Model Version"
++                    ),
++                ),
++                (
++                    "epss_count",
++                    models.PositiveIntegerField(default=0, editable=False, verbose_name="EPSS Scores Stored"),
++                ),
++            ],
++            options={
++                "verbose_name": "Vulnerability Intelligence Configuration",
++            },
++        ),
++    ]
+diff --git a/ghostwriter/vulnintel/migrations/__init__.py b/ghostwriter/vulnintel/migrations/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ghostwriter/vulnintel/models.py b/ghostwriter/vulnintel/models.py
+new file mode 100644
+index 0000000..10c13b6
+--- /dev/null
++++ b/ghostwriter/vulnintel/models.py
+@@ -0,0 +1,200 @@
++"""This contains all the database models for the Vulnerability Intelligence application."""
++
++# Standard Libraries
++from datetime import time
++
++# Django Imports
++from django.core.exceptions import ValidationError
++from django.core.validators import MaxValueValidator, MinValueValidator
++from django.db import models
++
++# Ghostwriter Libraries
++from ghostwriter.singleton.models import SingletonModel
++
++DEFAULT_KEV_FEED_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
++DEFAULT_EPSS_FEED_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
++DEFAULT_EPSS_API_URL = "https://api.first.org/data/v1/epss"
++
++
++def validate_https_url(value):
++    """Require feed URLs to use HTTPS, so downloads are always encrypted and verified."""
++    if not str(value).lower().startswith("https://"):
++        raise ValidationError("Use an https:// URL", code="insecure_url")
++
++
++class VulnIntelConfiguration(SingletonModel):
++    """Settings and run status for downloading the CISA KEV catalog and FIRST EPSS scores."""
++
++    FREQUENCY_DISABLED = "disabled"
++    FREQUENCY_6_HOURS = "6h"
++    FREQUENCY_12_HOURS = "12h"
++    FREQUENCY_DAILY = "daily"
++    FREQUENCY_WEEKLY = "weekly"
++    FREQUENCY_CHOICES = [
++        (FREQUENCY_DISABLED, "Disabled (refresh manually)"),
++        (FREQUENCY_6_HOURS, "Every 6 hours"),
++        (FREQUENCY_12_HOURS, "Every 12 hours"),
++        (FREQUENCY_DAILY, "Daily"),
++        (FREQUENCY_WEEKLY, "Weekly"),
++    ]
++
++    # Fields the refresh job writes; saving only these does not touch the schedule
++    STATUS_FIELDS = frozenset(
++        {
++            "last_run_at",
++            "last_error",
++            "kev_synced_at",
++            "kev_catalog_version",
++            "kev_released_at",
++            "kev_count",
++            "epss_synced_at",
++            "epss_score_date",
++            "epss_model_version",
++            "epss_count",
++        }
++    )
++
++    enable_kev = models.BooleanField(
++        "Download the CISA KEV Catalog",
++        default=False,
++        help_text="Keep a local copy of CISA's Known Exploited Vulnerabilities catalog",
++    )
++    enable_epss = models.BooleanField(
++        "Download EPSS Scores",
++        default=False,
++        help_text="Keep FIRST's EPSS scores for the CVE IDs your findings reference",
++    )
++    update_frequency = models.CharField(
++        "Update Frequency",
++        max_length=16,
++        choices=FREQUENCY_CHOICES,
++        default=FREQUENCY_DAILY,
++        help_text="How often to refresh the enabled sources. EPSS publishes new scores once a day",
++    )
++    run_at = models.TimeField(
++        "Run Time (UTC)",
++        default=time(14, 0),
++        help_text=(
++            "Time of day, in UTC, for daily and weekly refreshes, and the starting point for 6- and 12-hour "
++            "refreshes. FIRST publishes each day's EPSS scores at about 13:30 UTC"
++        ),
++    )
++    kev_feed_url = models.URLField(
++        "KEV Feed URL",
++        max_length=500,
++        default=DEFAULT_KEV_FEED_URL,
++        validators=[validate_https_url],
++        help_text="CISA's KEV catalog in JSON, or an internal mirror of it",
++    )
++    epss_feed_url = models.URLField(
++        "EPSS Feed URL",
++        max_length=500,
++        default=DEFAULT_EPSS_FEED_URL,
++        validators=[validate_https_url],
++        help_text="FIRST's daily EPSS scores file (CSV, optionally gzipped), or an internal mirror of it",
++    )
++    epss_api_url = models.URLField(
++        "EPSS API URL",
++        max_length=500,
++        default=DEFAULT_EPSS_API_URL,
++        validators=[validate_https_url],
++        help_text="FIRST's EPSS API, used only to look up scores for CVE IDs newly added to findings",
++    )
++    request_timeout = models.PositiveIntegerField(
++        "Request Timeout (Seconds)",
++        default=60,
++        validators=[MinValueValidator(5), MaxValueValidator(600)],
++        help_text="Give up on a download that takes longer than this",
++    )
++    max_download_mb = models.PositiveIntegerField(
++        "Maximum Download Size (MB)",
++        default=100,
++        validators=[MinValueValidator(1), MaxValueValidator(1024)],
++        help_text="Refuse a download, or a decompressed file, larger than this",
++    )
++
++    last_run_at = models.DateTimeField("Last Run", null=True, blank=True, editable=False)
++    last_error = models.TextField("Last Errors", blank=True, default="", editable=False)
++    kev_synced_at = models.DateTimeField("KEV Last Updated", null=True, blank=True, editable=False)
++    kev_catalog_version = models.CharField("KEV Catalog Version", max_length=64, blank=True, default="", editable=False)
++    kev_released_at = models.DateTimeField("KEV Catalog Released", null=True, blank=True, editable=False)
++    kev_count = models.PositiveIntegerField("KEV Entries", default=0, editable=False)
++    epss_synced_at = models.DateTimeField("EPSS Last Updated", null=True, blank=True, editable=False)
++    epss_score_date = models.DateField("EPSS Score Date", null=True, blank=True, editable=False)
++    epss_model_version = models.CharField("EPSS Model Version", max_length=64, blank=True, default="", editable=False)
++    epss_count = models.PositiveIntegerField("EPSS Scores Stored", default=0, editable=False)
++
++    def __str__(self):
++        return "Vulnerability Intelligence Configuration"
++
++    class Meta:
++        verbose_name = "Vulnerability Intelligence Configuration"
++
++    @property
++    def any_source_enabled(self):
++        return self.enable_kev or self.enable_epss
++
++    @property
++    def max_download_bytes(self):
++        return self.max_download_mb * 1024 * 1024
++
++
++class KnownExploitedVulnerability(models.Model):
++    """An entry in CISA's Known Exploited Vulnerabilities catalog."""
++
++    cve_id = models.CharField("CVE ID", max_length=32, unique=True)
++    vendor = models.CharField("Vendor or Project", max_length=255, blank=True, default="")
++    product = models.CharField(max_length=255, blank=True, default="")
++    name = models.CharField("Vulnerability Name", max_length=500, blank=True, default="")
++    date_added = models.DateField("Date Added", null=True, blank=True)
++    due_date = models.DateField("Due Date", null=True, blank=True)
++    known_ransomware = models.BooleanField(
++        "Known Ransomware Use",
++        default=False,
++        help_text="CISA knows of this vulnerability being used in ransomware campaigns",
++    )
++    short_description = models.TextField("Short Description", blank=True, default="")
++    required_action = models.TextField("Required Action", blank=True, default="")
++    notes = models.TextField(blank=True, default="")
++    cwes = models.JSONField("CWEs", default=list, blank=True)
++    removed_on = models.DateField(
++        "Removed On",
++        null=True,
++        blank=True,
++        help_text="The date this entry was no longer in CISA's catalog, which can happen when CISA corrects it",
++    )
++    updated_at = models.DateTimeField("Updated", auto_now=True)
++
++    class Meta:
++        ordering = ["-date_added", "cve_id"]
++        verbose_name = "Known exploited vulnerability"
++        verbose_name_plural = "Known exploited vulnerabilities"
++
++    def __str__(self):
++        return self.cve_id
++
++
++class EpssScore(models.Model):
++    """FIRST's Exploit Prediction Scoring System score for one CVE."""
++
++    cve_id = models.CharField("CVE ID", max_length=32, unique=True)
++    epss = models.FloatField(
++        "EPSS Score",
++        validators=[MinValueValidator(0), MaxValueValidator(1)],
++        help_text="Probability of exploitation activity in the next 30 days, from 0 to 1",
++    )
++    percentile = models.FloatField(
++        validators=[MinValueValidator(0), MaxValueValidator(1)],
++        help_text="Share of all scored CVEs with an equal or lower score, from 0 to 1",
++    )
++    score_date = models.DateField("Score Date")
++    model_version = models.CharField("Model Version", max_length=64, blank=True, default="")
++    updated_at = models.DateTimeField("Updated", auto_now=True)
++
++    class Meta:
++        ordering = ["-epss", "cve_id"]
++        verbose_name = "EPSS score"
++        verbose_name_plural = "EPSS scores"
++
++    def __str__(self):
++        return f"{self.cve_id}: {self.epss}"
+diff --git a/ghostwriter/vulnintel/schedule.py b/ghostwriter/vulnintel/schedule.py
+new file mode 100644
+index 0000000..31ff0ac
+--- /dev/null
++++ b/ghostwriter/vulnintel/schedule.py
+@@ -0,0 +1,71 @@
++"""Keep the Django Q schedule for the refresh job in step with the configuration."""
++
++# Standard Libraries
++from datetime import datetime, timedelta
++from datetime import timezone as dt_timezone
++
++# Django Imports
++from django.db import transaction
++from django.utils import timezone
++
++# 3rd Party Libraries
++from django_q.models import Schedule
++
++# Ghostwriter Libraries
++from ghostwriter.home.django_q_policy import get_schedule_policy
++from ghostwriter.vulnintel.models import VulnIntelConfiguration
++from ghostwriter.vulnintel.tasks import REFRESH_TASK
++
++SCHEDULE_NAME = "Refresh Vulnerability Intelligence"
++
++# How each frequency maps onto a Django Q schedule: (schedule type, minutes, step to the first run)
++FREQUENCIES = {
++    VulnIntelConfiguration.FREQUENCY_6_HOURS: (Schedule.MINUTES, 360, timedelta(hours=6)),
++    VulnIntelConfiguration.FREQUENCY_12_HOURS: (Schedule.MINUTES, 720, timedelta(hours=12)),
++    VulnIntelConfiguration.FREQUENCY_DAILY: (Schedule.DAILY, None, timedelta(days=1)),
++    VulnIntelConfiguration.FREQUENCY_WEEKLY: (Schedule.WEEKLY, None, timedelta(days=1)),
++}
++
++
++def first_run(now, run_at, step):
++    """Return the first time after ``now`` on the grid that starts at ``run_at`` (UTC) and repeats every ``step``."""
++    now = now.astimezone(dt_timezone.utc)
++    candidate = datetime.combine(now.date(), run_at, tzinfo=dt_timezone.utc) - timedelta(days=1)
++    while candidate <= now:
++        candidate += step
++    return candidate
++
++
++def get_refresh_schedule():
++    return Schedule.objects.filter(func=REFRESH_TASK).order_by("pk").first()
++
++
++def sync_schedule(config=None, now=None):
++    """
++    Create, update, or delete the refresh schedule to match the configuration, and return it (or None).
++
++    The configuration is authoritative: saving it resets the schedule's type, interval, and next run.
++    """
++    config = config or VulnIntelConfiguration.get_solo()
++    timing = FREQUENCIES.get(config.update_frequency)
++    with transaction.atomic():
++        schedules = Schedule.objects.select_for_update().filter(func=REFRESH_TASK).order_by("pk")
++        if timing is None or not config.any_source_enabled or REFRESH_TASK not in get_schedule_policy():
++            schedules.delete()
++            return None
++
++        schedule_type, minutes, step = timing
++        schedule = schedules.first()
++        # Duplicates can only come from manual edits in the Django Q admin
++        schedules.exclude(pk=getattr(schedule, "pk", None)).delete()
++        schedule = schedule or Schedule(func=REFRESH_TASK)
++        schedule.name = SCHEDULE_NAME
++        schedule.args = None
++        schedule.kwargs = None
++        schedule.hook = None
++        schedule.schedule_type = schedule_type
++        schedule.minutes = minutes
++        schedule.repeats = -1
++        schedule.next_run = first_run(now or timezone.now(), config.run_at, step)
++        schedule.save()
++        return schedule
+diff --git a/ghostwriter/vulnintel/signals.py b/ghostwriter/vulnintel/signals.py
+new file mode 100644
+index 0000000..cd35992
+--- /dev/null
++++ b/ghostwriter/vulnintel/signals.py
+@@ -0,0 +1,75 @@
++"""This contains all the signals used by the Vulnerability Intelligence application."""
++
++# Standard Libraries
++import logging
++
++# Django Imports
++from django.core.cache import cache
++from django.db import transaction
++from django.db.models.signals import post_save
++from django.dispatch import receiver
++
++# 3rd Party Libraries
++from django_q.tasks import async_task
++
++# Ghostwriter Libraries
++from ghostwriter.reporting.models import Finding, ReportFindingLink
++from ghostwriter.reporting.validators import clean_cves
++from ghostwriter.vulnintel.models import EpssScore, VulnIntelConfiguration
++from ghostwriter.vulnintel.schedule import sync_schedule
++from ghostwriter.vulnintel.tasks import LOOKUP_TASK
++
++logger = logging.getLogger(__name__)
++
++# Saving a finding several times (as the collaborative editor does) queues one lookup per CVE ID
++LOOKUP_CACHE_PREFIX = "vulnintel:epss-lookup:"
++LOOKUP_DEDUP_SECONDS = 600
++
++
++@receiver(post_save, sender=VulnIntelConfiguration)
++def sync_refresh_schedule(sender, instance, raw=False, update_fields=None, **kwargs):
++    """Match the refresh schedule to the saved settings; run status updates leave it alone."""
++    if raw or (update_fields and set(update_fields) <= VulnIntelConfiguration.STATUS_FIELDS):
++        return
++    sync_schedule(instance)
++
++
++def queue_epss_lookup(instance):
++    """Queue an EPSS API lookup for CVE IDs on a saved finding that have no stored score yet."""
++    cves = clean_cves(instance.cves)
++    if not cves:
++        return
++    config = VulnIntelConfiguration.get_solo()
++    if not config.enable_epss:
++        return
++    known = set(EpssScore.objects.filter(cve_id__in=cves).values_list("cve_id", flat=True))
++    missing = [cve_id for cve_id in cves if cve_id not in known]
++    if not missing:
++        return
++
++    def enqueue():
++        fresh = [
++            cve_id for cve_id in missing if cache.add(f"{LOOKUP_CACHE_PREFIX}{cve_id}", True, LOOKUP_DEDUP_SECONDS)
++        ]
++        if not fresh:
++            return
++        try:
++            async_task(LOOKUP_TASK, fresh)
++        except Exception:  # pylint: disable=broad-exception-caught
++            # The next scheduled refresh covers these CVE IDs; never fail the finding's save
++            cache.delete_many([f"{LOOKUP_CACHE_PREFIX}{cve_id}" for cve_id in fresh])
++            logger.exception("Could not queue an EPSS lookup for %s", ", ".join(fresh))
++
++    transaction.on_commit(enqueue)
++
++
++@receiver(post_save, sender=Finding)
++def lookup_finding_cves(sender, instance, raw=False, **kwargs):
++    if not raw:
++        queue_epss_lookup(instance)
++
++
++@receiver(post_save, sender=ReportFindingLink)
++def lookup_report_finding_cves(sender, instance, raw=False, **kwargs):
++    if not raw:
++        queue_epss_lookup(instance)
+diff --git a/ghostwriter/vulnintel/tasks.py b/ghostwriter/vulnintel/tasks.py
+new file mode 100644
+index 0000000..2214d9c
+--- /dev/null
++++ b/ghostwriter/vulnintel/tasks.py
+@@ -0,0 +1,229 @@
++"""Background jobs that keep the local KEV catalog and EPSS scores current."""
++
++# Standard Libraries
++import logging
++from urllib.parse import urlencode
++
++# Django Imports
++from django.db import transaction
++from django.utils import timezone
++
++# Ghostwriter Libraries
++from ghostwriter.reporting.models import Finding, ReportFindingLink
++from ghostwriter.reporting.validators import clean_cves
++from ghostwriter.vulnintel.feeds import FeedError, download, parse_epss, parse_epss_api, parse_kev
++from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability, VulnIntelConfiguration
++
++logger = logging.getLogger(__name__)
++
++REFRESH_TASK = "ghostwriter.vulnintel.tasks.refresh_vulnerability_intel"
++LOOKUP_TASK = "ghostwriter.vulnintel.tasks.lookup_epss_scores"
++
++# FIRST's API takes a comma-separated list of CVE IDs; keep each request well under its URL limits
++EPSS_API_BATCH = 100
++# One lookup never asks for more than this many CVE IDs; the next refresh covers the rest
++EPSS_LOOKUP_LIMIT = 1000
++
++KEV_FIELDS = [
++    "vendor",
++    "product",
++    "name",
++    "date_added",
++    "due_date",
++    "known_ransomware",
++    "short_description",
++    "required_action",
++    "notes",
++    "cwes",
++    "removed_on",
++    "updated_at",
++]
++EPSS_FIELDS = ["epss", "percentile", "score_date", "model_version", "updated_at"]
++
++
++def _save_status(config, **fields):
++    """Write run status fields only, so a refresh never overwrites settings saved meanwhile."""
++    for name, value in fields.items():
++        setattr(config, name, value)
++    config.save(update_fields=list(fields))
++
++
++def referenced_cves():
++    """Return the set of valid CVE IDs on any library or report finding."""
++    cves = set()
++    for model in (Finding, ReportFindingLink):
++        for value in model.objects.exclude(cves=[]).values_list("cves", flat=True).iterator():
++            cves.update(clean_cves(value))
++    return cves
++
++
++def apply_kev(catalog, config):
++    """Store a parsed KEV catalog, mark entries CISA dropped, and record the run. Returns a summary."""
++    if config.kev_released_at and catalog.released_at and catalog.released_at < config.kev_released_at:
++        raise FeedError(
++            f"The KEV catalog ({catalog.released_at:%Y-%m-%d %H:%M} UTC) is older than the stored copy "
++            f"({config.kev_released_at:%Y-%m-%d %H:%M} UTC)"
++        )
++    now = timezone.now()
++    feed_ids = {entry["cve_id"] for entry in catalog.entries}
++    with transaction.atomic():
++        before = set(KnownExploitedVulnerability.objects.values_list("cve_id", flat=True))
++        KnownExploitedVulnerability.objects.bulk_create(
++            [KnownExploitedVulnerability(removed_on=None, updated_at=now, **entry) for entry in catalog.entries],
++            update_conflicts=True,
++            unique_fields=["cve_id"],
++            update_fields=KEV_FIELDS,
++            batch_size=500,
++        )
++        removed = (
++            KnownExploitedVulnerability.objects.filter(removed_on__isnull=True)
++            .exclude(cve_id__in=feed_ids)
++            .update(removed_on=now.date(), updated_at=now)
++        )
++    added = len(feed_ids - before)
++    _save_status(
++        config,
++        kev_synced_at=now,
++        kev_catalog_version=catalog.version,
++        kev_released_at=catalog.released_at,
++        kev_count=len(feed_ids),
++    )
++    return f"KEV {catalog.version or 'catalog'}: {len(feed_ids)} entries, {added} new, {removed} removed"
++
++
++def apply_epss(scores, config, wanted):
++    """
++    Store parsed EPSS scores for the CVE IDs in ``wanted``, drop scores no finding references any more,
++    and record the run. Returns a summary.
++    """
++    if config.epss_score_date and scores.score_date < config.epss_score_date:
++        raise FeedError(
++            f"The EPSS scores ({scores.score_date}) are older than the stored ones ({config.epss_score_date})"
++        )
++    now = timezone.now()
++    with transaction.atomic():
++        EpssScore.objects.bulk_create(
++            [
++                EpssScore(
++                    cve_id=cve_id,
++                    epss=epss,
++                    percentile=percentile,
++                    score_date=scores.score_date,
++                    model_version=scores.model_version,
++                    updated_at=now,
++                )
++                for cve_id, (epss, percentile) in scores.scores.items()
++            ],
++            update_conflicts=True,
++            unique_fields=["cve_id"],
++            update_fields=EPSS_FIELDS,
++            batch_size=500,
++        )
++        pruned, _ = EpssScore.objects.exclude(cve_id__in=wanted).delete()
++        stored = EpssScore.objects.count()
++    _save_status(
++        config,
++        epss_synced_at=now,
++        epss_score_date=scores.score_date,
++        epss_model_version=scores.model_version,
++        epss_count=stored,
++    )
++    missing = len(wanted) - len(scores.scores)
++    summary = f"EPSS {scores.score_date} ({scores.model_version}): {len(scores.scores)} scores stored"
++    if missing:
++        summary += f", {missing} CVE IDs not in the file"
++    if pruned:
++        summary += f", {pruned} no longer referenced"
++    return summary
++
++
++def refresh_kev(config, data=None):
++    """Download (unless ``data`` is given), check, and store the KEV catalog."""
++    if data is None:
++        data = download(config.kev_feed_url, config.request_timeout, config.max_download_bytes)
++    return apply_kev(parse_kev(data), config)
++
++
++def refresh_epss(config, data=None):
++    """Download (unless ``data`` is given), check, and store EPSS scores for the CVE IDs findings reference."""
++    wanted = referenced_cves()
++    if not wanted and data is None:
++        EpssScore.objects.all().delete()
++        _save_status(config, epss_count=0)
++        return "EPSS: no findings reference CVE IDs, so nothing was downloaded"
++    if data is None:
++        data = download(config.epss_feed_url, config.request_timeout, config.max_download_bytes)
++    scores = parse_epss(data, wanted=wanted, max_bytes=config.max_download_bytes)
++    return apply_epss(scores, config, wanted)
++
++
++def refresh_vulnerability_intel():
++    """
++    Refresh every enabled source. A failure in one source does not stop the other, and a failed or
++    suspicious download never replaces stored data. Returns a summary for the task result.
++    """
++    config = VulnIntelConfiguration.get_solo()
++    if not config.any_source_enabled:
++        return "Nothing to refresh: the KEV and EPSS sources are both disabled"
++
++    results, errors = [], []
++    for enabled, label, refresh in (
++        (config.enable_kev, "KEV", refresh_kev),
++        (config.enable_epss, "EPSS", refresh_epss),
++    ):
++        if not enabled:
++            continue
++        try:
++            results.append(refresh(config))
++        except FeedError as exception:
++            logger.warning("Vulnerability intelligence refresh failed for %s: %s", label, exception)
++            errors.append(f"{label}: {exception}")
++        except Exception as exception:  # pylint: disable=broad-exception-caught
++            logger.exception("Vulnerability intelligence refresh failed for %s", label)
++            errors.append(f"{label}: unexpected error ({exception.__class__.__name__}: {exception})")
++
++    _save_status(config, last_run_at=timezone.now(), last_error="\n".join(errors))
++    summary = "; ".join(results + errors)
++    if errors and not results:
++        raise RuntimeError(summary)
++    return summary
++
++
++def lookup_epss_scores(cve_ids):
++    """
++    Fetch EPSS scores from FIRST's API for CVE IDs that have none stored yet, so findings show a score
++    without waiting for the next refresh. Returns a summary for the task result.
++    """
++    config = VulnIntelConfiguration.get_solo()
++    if not config.enable_epss:
++        return "EPSS is disabled"
++    wanted = clean_cves(cve_ids)
++    known = set(EpssScore.objects.filter(cve_id__in=wanted).values_list("cve_id", flat=True))
++    missing = [cve_id for cve_id in wanted if cve_id not in known][:EPSS_LOOKUP_LIMIT]
++    if not missing:
++        return "Every CVE ID already has a score"
++
++    found = {}
++    for start in range(0, len(missing), EPSS_API_BATCH):
++        batch = missing[start : start + EPSS_API_BATCH]
++        url = f"{config.epss_api_url}?{urlencode({'cve': ','.join(batch)})}"
++        found.update(parse_epss_api(download(url, config.request_timeout, config.max_download_bytes)))
++
++    now = timezone.now()
++    # ``ignore_conflicts`` keeps a score a concurrent refresh stored from the daily file
++    EpssScore.objects.bulk_create(
++        [
++            EpssScore(
++                cve_id=cve_id,
++                epss=epss,
++                percentile=percentile,
++                score_date=score_date,
++                model_version=config.epss_model_version,
++                updated_at=now,
++            )
++            for cve_id, (epss, percentile, score_date) in found.items()
++        ],
++        ignore_conflicts=True,
++    )
++    _save_status(config, epss_count=EpssScore.objects.count())
++    return f"EPSS lookup: {len(found)} of {len(missing)} CVE IDs scored"
+diff --git a/ghostwriter/vulnintel/templates/vulnintel/admin_change_form.html b/ghostwriter/vulnintel/templates/vulnintel/admin_change_form.html
+new file mode 100644
+index 0000000..3b00964
+--- /dev/null
++++ b/ghostwriter/vulnintel/templates/vulnintel/admin_change_form.html
+@@ -0,0 +1,33 @@
++{% extends "admin/change_form.html" %}
++
++{% block extrastyle %}
++    {{ block.super }}
++    <style>
++        .object-tool-form {
++            display: contents;
++        }
++        .object-tool-form input {
++            padding: 3px 12px;
++            background-color: var(--object-tools-bg);
++            color: var(--object-tools-fg);
++            border-radius: 15px;
++            font-weight: 400;
++            font-size: 0.6875rem;
++            text-transform: uppercase;
++            line-height: 1.25rem;
++            margin: 0;
++            border: 0;
++            cursor: pointer;
++        }
++    </style>
++{% endblock %}
++
++{% block object-tools-items %}
++    {{ block.super }}
++    <li>
++        <form action="{% url 'admin:vulnintel_vulnintelconfiguration_refresh' %}" method="POST" class="object-tool-form">
++            {% csrf_token %}
++            <input type="submit" value="Refresh Now" />
++        </form>
++    </li>
++{% endblock %}
+diff --git a/ghostwriter/vulnintel/tests/__init__.py b/ghostwriter/vulnintel/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ghostwriter/vulnintel/tests/fixtures.py b/ghostwriter/vulnintel/tests/fixtures.py
+new file mode 100644
+index 0000000..1298dc2
+--- /dev/null
++++ b/ghostwriter/vulnintel/tests/fixtures.py
+@@ -0,0 +1,57 @@
++"""Small, well-formed KEV and EPSS documents for tests."""
++
++# Standard Libraries
++import gzip
++import json
++
++
++def kev_entry(cve_id, **overrides):
++    entry = {
++        "cveID": cve_id,
++        "vendorProject": "Example Vendor",
++        "product": "Example Product",
++        "vulnerabilityName": f"Example Product vulnerability {cve_id}",
++        "dateAdded": "2026-11-01",
++        "shortDescription": "An example vulnerability.",
++        "requiredAction": "Apply the vendor's update.",
++        "dueDate": "2026-11-22",
++        "knownRansomwareCampaignUse": "Unknown",
++        "notes": "https://example.com/advisory",
++        "cwes": ["CWE-502"],
++    }
++    entry.update(overrides)
++    return entry
++
++
++def kev_document(entries, version="2026.11.20", released="2026-11-20T17:48:39.1516Z"):
++    return json.dumps(
++        {
++            "title": "CISA Catalog of Known Exploited Vulnerabilities",
++            "catalogVersion": version,
++            "dateReleased": released,
++            "count": len(entries),
++            "vulnerabilities": entries,
++        }
++    ).encode()
++
++
++def epss_document(rows, score_date="2026-11-22", model="v2026.06.15", compress=True):
++    lines = [f"#model_version:{model},score_date:{score_date}T12:03:04Z", "cve,epss,percentile"]
++    lines += [f"{cve_id},{epss},{percentile}" for cve_id, epss, percentile in rows]
++    data = ("\n".join(lines) + "\n").encode()
++    return gzip.compress(data) if compress else data
++
++
++def epss_api_document(rows, status="OK"):
++    return json.dumps(
++        {
++            "status": status,
++            "status-code": 200,
++            "version": "1.0",
++            "total": len(rows),
++            "data": [
++                {"cve": cve_id, "epss": epss, "percentile": percentile, "date": score_date}
++                for cve_id, epss, percentile, score_date in rows
++            ],
++        }
++    ).encode()
+diff --git a/ghostwriter/vulnintel/tests/test_admin_and_commands.py b/ghostwriter/vulnintel/tests/test_admin_and_commands.py
+new file mode 100644
+index 0000000..d9154c3
+--- /dev/null
++++ b/ghostwriter/vulnintel/tests/test_admin_and_commands.py
+@@ -0,0 +1,165 @@
++"""Tests for the configuration page, the read-only lists, and the management commands."""
++
++# Standard Libraries
++import tempfile
++from datetime import date
++from io import StringIO
++from pathlib import Path
++from unittest import mock
++
++# Django Imports
++from django.core.management import CommandError, call_command
++from django.test import TestCase
++from django.urls import reverse
++
++# Ghostwriter Libraries
++from ghostwriter.factories import AdminFactory, FindingFactory, MgrFactory
++from ghostwriter.vulnintel import feeds
++from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability, VulnIntelConfiguration
++from ghostwriter.vulnintel.tasks import REFRESH_TASK
++from ghostwriter.vulnintel.tests.fixtures import epss_document, kev_document, kev_entry
++
++PASSWORD = "SuperNaturalReporting!"
++
++
++class ConfigurationAdminTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.admin_user = AdminFactory(password=PASSWORD)
++        cls.manager = MgrFactory(password=PASSWORD)
++        cls.change_url = reverse("admin:vulnintel_vulnintelconfiguration_change")
++        cls.refresh_url = reverse("admin:vulnintel_vulnintelconfiguration_refresh")
++
++    def setUp(self):
++        self.client.login(username=self.admin_user.username, password=PASSWORD)
++
++    def test_page_shows_settings_status_and_refresh_button(self):
++        response = self.client.get(self.change_url)
++        self.assertEqual(response.status_code, 200)
++        self.assertContains(response, "Download the CISA KEV Catalog")
++        self.assertContains(response, "Next Refresh")
++        self.assertContains(response, "Not scheduled")
++        self.assertContains(response, self.refresh_url)
++
++    def test_saving_settings_schedules_the_refresh(self):
++        response = self.client.post(
++            self.change_url,
++            {
++                "enable_kev": "on",
++                "update_frequency": VulnIntelConfiguration.FREQUENCY_12_HOURS,
++                "run_at": "14:00:00",
++                "kev_feed_url": "https://mirror.example.com/kev.json",
++                "epss_feed_url": "https://mirror.example.com/epss.csv.gz",
++                "epss_api_url": "https://api.first.org/data/v1/epss",
++                "request_timeout": 60,
++                "max_download_mb": 100,
++            },
++        )
++        self.assertEqual(response.status_code, 302)
++        response = self.client.get(self.change_url)
++        self.assertContains(response, " UTC")
++        self.assertNotContains(response, "Not scheduled")
++
++    def test_rejects_plain_http_feeds(self):
++        response = self.client.post(
++            self.change_url,
++            {
++                "update_frequency": VulnIntelConfiguration.FREQUENCY_DAILY,
++                "run_at": "14:00:00",
++                "kev_feed_url": "http://mirror.example.com/kev.json",
++                "epss_feed_url": "https://mirror.example.com/epss.csv.gz",
++                "epss_api_url": "https://api.first.org/data/v1/epss",
++                "request_timeout": 60,
++                "max_download_mb": 100,
++            },
++        )
++        self.assertEqual(response.status_code, 200)
++        self.assertContains(response, "Use an https:// URL")
++
++    @mock.patch("ghostwriter.vulnintel.admin.async_task")
++    def test_refresh_queues_the_task(self, async_task):
++        config = VulnIntelConfiguration.get_solo()
++        config.enable_epss = True
++        config.save()
++        response = self.client.post(self.refresh_url, follow=True)
++        async_task.assert_called_once_with(REFRESH_TASK)
++        self.assertContains(response, "Refresh queued")
++
++    @mock.patch("ghostwriter.vulnintel.admin.async_task")
++    def test_refresh_needs_an_enabled_source_and_a_post(self, async_task):
++        response = self.client.post(self.refresh_url, follow=True)
++        self.assertContains(response, "Enable at least one source")
++        self.assertEqual(self.client.get(self.refresh_url).status_code, 405)
++        async_task.assert_not_called()
++
++    @mock.patch("ghostwriter.vulnintel.admin.async_task")
++    def test_refresh_is_admin_only(self, async_task):
++        self.client.logout()
++        self.client.login(username=self.manager.username, password=PASSWORD)
++        response = self.client.post(self.refresh_url)
++        self.assertNotEqual(response.status_code, 200)
++        async_task.assert_not_called()
++
++    def test_kev_and_epss_lists_are_read_only(self):
++        KnownExploitedVulnerability.objects.create(cve_id="CVE-2021-44228", vendor="Apache", product="Log4j")
++        EpssScore.objects.create(cve_id="CVE-2021-44228", epss="0.9", percentile="0.9", score_date=date(2026, 11, 1))
++        for name in ("knownexploitedvulnerability", "epssscore"):
++            response = self.client.get(reverse(f"admin:vulnintel_{name}_changelist"))
++            self.assertEqual(response.status_code, 200)
++            self.assertContains(response, "CVE-2021-44228")
++            self.assertEqual(self.client.get(reverse(f"admin:vulnintel_{name}_add")).status_code, 403)
++
++
++@mock.patch.object(feeds, "MIN_KEV_ENTRIES", 2)
++@mock.patch.object(feeds, "MIN_EPSS_ROWS", 1)
++class CommandTests(TestCase):
++    def setUp(self):
++        self.directory = tempfile.TemporaryDirectory()
++        self.addCleanup(self.directory.cleanup)
++
++    def write(self, name, data):
++        path = Path(self.directory.name) / name
++        path.write_bytes(data)
++        return str(path)
++
++    def test_import_kev(self):
++        path = self.write("kev.json", kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")]))
++        out = StringIO()
++        call_command("import_kev", path, stdout=out)
++        self.assertIn("2 entries, 2 new", out.getvalue())
++        self.assertEqual(KnownExploitedVulnerability.objects.count(), 2)
++
++    def test_import_kev_rejects_bad_files(self):
++        with self.assertRaisesMessage(CommandError, "probably truncated"):
++            call_command("import_kev", self.write("kev.json", kev_document([kev_entry("CVE-2021-44228")])))
++        with self.assertRaisesMessage(CommandError, "Could not read"):
++            call_command("import_kev", str(Path(self.directory.name) / "missing.json"))
++
++    def test_import_epss(self):
++        FindingFactory(cves=["CVE-2021-44228"])
++        path = self.write(
++            "epss.csv.gz", epss_document([("CVE-2021-44228", "0.9", "0.99"), ("CVE-2014-0160", "0.5", "0.9")])
++        )
++        out = StringIO()
++        call_command("import_epss", path, stdout=out)
++        self.assertIn("1 scores stored", out.getvalue())
++        self.assertEqual(list(EpssScore.objects.values_list("cve_id", flat=True)), ["CVE-2021-44228"])
++
++    def test_import_respects_the_size_limit(self):
++        config = VulnIntelConfiguration.get_solo()
++        config.max_download_mb = 1
++        config.save()
++        path = self.write("kev.json", b" " * (1024 * 1024 + 10))
++        with self.assertRaisesMessage(CommandError, "larger than the 1 MB limit"):
++            call_command("import_kev", path)
++
++    def test_refresh_command(self):
++        out = StringIO()
++        call_command("refresh_vuln_intel", stdout=out)
++        self.assertIn("both disabled", out.getvalue())
++        config = VulnIntelConfiguration.get_solo()
++        config.enable_kev = True
++        config.save()
++        with mock.patch("ghostwriter.vulnintel.tasks.download", side_effect=feeds.FeedError("unreachable")):
++            with self.assertRaisesMessage(CommandError, "KEV: unreachable"):
++                call_command("refresh_vuln_intel")
+diff --git a/ghostwriter/vulnintel/tests/test_feeds.py b/ghostwriter/vulnintel/tests/test_feeds.py
+new file mode 100644
+index 0000000..f68a691
+--- /dev/null
++++ b/ghostwriter/vulnintel/tests/test_feeds.py
+@@ -0,0 +1,197 @@
++"""Tests for downloading and parsing the KEV and EPSS feeds."""
++
++# Standard Libraries
++from datetime import date, datetime, timezone
++from unittest import mock
++
++# Django Imports
++from django.test import SimpleTestCase
++
++# 3rd Party Libraries
++import requests
++
++# Ghostwriter Libraries
++from ghostwriter.vulnintel import feeds
++from ghostwriter.vulnintel.feeds import FeedError, download, parse_epss, parse_epss_api, parse_kev
++from ghostwriter.vulnintel.tests.fixtures import epss_api_document, epss_document, kev_document, kev_entry
++
++
++class FakeResponse:
++    def __init__(self, body=b"", url="https://example.com/feed", headers=None, status=200):
++        self.body = body
++        self.url = url
++        self.headers = headers or {}
++        self.status = status
++
++    def __enter__(self):
++        return self
++
++    def __exit__(self, *args):
++        return False
++
++    def raise_for_status(self):
++        if self.status >= 400:
++            raise requests.HTTPError(f"{self.status} Error")
++
++    def iter_content(self, chunk_size=1):
++        for start in range(0, len(self.body), chunk_size):
++            yield self.body[start : start + chunk_size]
++
++
++@mock.patch.object(feeds, "MIN_KEV_ENTRIES", 2)
++class ParseKevTests(SimpleTestCase):
++    def test_parses_entries(self):
++        catalog = parse_kev(
++            kev_document(
++                [
++                    kev_entry("CVE-2021-44228", knownRansomwareCampaignUse="Known"),
++                    kev_entry("cve-2014-0160", dueDate=""),
++                ]
++            )
++        )
++        self.assertEqual(catalog.version, "2026.11.20")
++        self.assertEqual(catalog.released_at, datetime(2026, 11, 20, 17, 48, 39, 151600, tzinfo=timezone.utc))
++        self.assertEqual([entry["cve_id"] for entry in catalog.entries], ["CVE-2021-44228", "CVE-2014-0160"])
++        log4shell, heartbleed = catalog.entries
++        self.assertTrue(log4shell["known_ransomware"])
++        self.assertFalse(heartbleed["known_ransomware"])
++        self.assertEqual(log4shell["date_added"], date(2026, 11, 1))
++        self.assertEqual(log4shell["due_date"], date(2026, 11, 22))
++        self.assertIsNone(heartbleed["due_date"])
++        self.assertEqual(log4shell["cwes"], ["CWE-502"])
++        self.assertEqual(log4shell["vendor"], "Example Vendor")
++
++    def test_skips_malformed_and_duplicate_entries(self):
++        catalog = parse_kev(
++            kev_document(
++                [
++                    kev_entry("CVE-2021-44228"),
++                    kev_entry("CVE-2021-44228"),
++                    kev_entry("Log4Shell"),
++                    "not an object",
++                    kev_entry("CVE-2014-0160", cwes="CWE-119"),
++                ]
++            )
++        )
++        self.assertEqual(len(catalog.entries), 2)
++        self.assertEqual(catalog.skipped, 3)
++        self.assertEqual(catalog.entries[1]["cwes"], [])
++
++    def test_rejects_truncated_catalog(self):
++        with self.assertRaisesMessage(FeedError, "probably truncated"):
++            parse_kev(kev_document([kev_entry("CVE-2021-44228")]))
++
++    def test_rejects_other_documents(self):
++        for data in (b"<html>maintenance</html>", b'{"vulnerabilities": "none"}', b"[]"):
++            with self.assertRaises(FeedError):
++                parse_kev(data)
++
++    def test_tolerates_missing_release_date(self):
++        catalog = parse_kev(
++            kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")], released="not a date")
++        )
++        self.assertIsNone(catalog.released_at)
++
++
++@mock.patch.object(feeds, "MIN_EPSS_ROWS", 3)
++class ParseEpssTests(SimpleTestCase):
++    rows = [
++        ("CVE-1999-0001", "0.04753", "0.92097"),
++        ("CVE-2014-0160", "0.99999", "0.99997"),
++        ("CVE-2021-44228", "0.999990000", "1.000000000"),
++    ]
++
++    def test_parses_gzipped_file(self):
++        scores = parse_epss(epss_document(self.rows))
++        self.assertEqual(scores.model_version, "v2026.06.15")
++        self.assertEqual(scores.score_date, date(2026, 11, 22))
++        self.assertEqual(scores.total_rows, 3)
++        self.assertEqual(scores.scores["CVE-2021-44228"], (0.99999, 1.0))
++
++    def test_parses_plain_file(self):
++        self.assertEqual(len(parse_epss(epss_document(self.rows, compress=False)).scores), 3)
++
++    def test_keeps_only_wanted_cves_but_counts_every_row(self):
++        scores = parse_epss(epss_document(self.rows), wanted={"CVE-2014-0160", "CVE-2099-0001"})
++        self.assertEqual(list(scores.scores), ["CVE-2014-0160"])
++        self.assertEqual(scores.total_rows, 3)
++
++    def test_ignores_rows_with_bad_scores(self):
++        rows = self.rows + [("CVE-2020-0001", "1.5", "0.5"), ("CVE-2020-0002", "NaN", "0.5"), ("bad", "0.1", "0.1")]
++        scores = parse_epss(epss_document(rows))
++        self.assertNotIn("CVE-2020-0001", scores.scores)
++        self.assertNotIn("CVE-2020-0002", scores.scores)
++        self.assertEqual(scores.total_rows, 6)
++
++    def test_rejects_truncated_file(self):
++        with self.assertRaisesMessage(FeedError, "probably truncated"):
++            parse_epss(epss_document(self.rows[:2]))
++
++    def test_rejects_missing_header_lines(self):
++        with self.assertRaisesMessage(FeedError, "model version and score date"):
++            parse_epss(b"cve,epss,percentile\nCVE-2021-44228,0.9,0.9\n")
++        with self.assertRaisesMessage(FeedError, "columns"):
++            parse_epss(b"#model_version:v1,score_date:2026-11-22T00:00:00Z\ncve,score\n")
++
++    def test_rejects_corrupt_gzip(self):
++        with self.assertRaises(FeedError):
++            parse_epss(epss_document(self.rows)[:40])
++
++    def test_limits_decompressed_size(self):
++        rows = [(f"CVE-2020-{n:05d}", "0.1", "0.5") for n in range(5000)]
++        with self.assertRaisesMessage(FeedError, "larger than"):
++            parse_epss(epss_document(rows), max_bytes=1024 * 1024 // 16)
++
++
++class ParseEpssApiTests(SimpleTestCase):
++    def test_parses_scores(self):
++        scores = parse_epss_api(
++            epss_api_document(
++                [
++                    ("CVE-2021-44228", "0.999990000", "1.000000000", "2026-11-22"),
++                    ("CVE-2014-0160", "bad", "0.9", "2026-11-22"),
++                ]
++            )
++        )
++        self.assertEqual(scores, {"CVE-2021-44228": (0.99999, 1.0, date(2026, 11, 22))})
++
++    def test_rejects_errors(self):
++        for data in (epss_api_document([], status="ERROR"), b"not json"):
++            with self.assertRaises(FeedError):
++                parse_epss_api(data)
++
++
++class DownloadTests(SimpleTestCase):
++    @mock.patch("ghostwriter.vulnintel.feeds.requests.get")
++    def test_returns_body_with_verified_tls(self, get):
++        get.return_value = FakeResponse(b"payload")
++        self.assertEqual(download("https://example.com/feed", 30, 1024), b"payload")
++        _, kwargs = get.call_args
++        self.assertEqual(kwargs["timeout"], 30)
++        self.assertTrue(kwargs["stream"])
++        self.assertNotIn("verify", kwargs)
++
++    @mock.patch("ghostwriter.vulnintel.feeds.requests.get")
++    def test_refuses_large_downloads(self, get):
++        get.return_value = FakeResponse(b"x" * 2048)
++        with self.assertRaisesMessage(FeedError, "larger than"):
++            download("https://example.com/feed", 30, 1024)
++        get.return_value = FakeResponse(b"", headers={"Content-Length": "999999"})
++        with self.assertRaisesMessage(FeedError, "larger than"):
++            download("https://example.com/feed", 30, 1024)
++
++    @mock.patch("ghostwriter.vulnintel.feeds.requests.get")
++    def test_refuses_redirect_away_from_https(self, get):
++        get.return_value = FakeResponse(b"payload", url="http://example.com/feed")
++        with self.assertRaisesMessage(FeedError, "non-HTTPS"):
++            download("https://example.com/feed", 30, 1024)
++
++    @mock.patch("ghostwriter.vulnintel.feeds.requests.get")
++    def test_wraps_request_errors(self, get):
++        get.side_effect = requests.ConnectionError("unreachable")
++        with self.assertRaisesMessage(FeedError, "Could not download"):
++            download("https://example.com/feed", 30, 1024)
++        get.side_effect = None
++        get.return_value = FakeResponse(status=503)
++        with self.assertRaisesMessage(FeedError, "503"):
++            download("https://example.com/feed", 30, 1024)
+diff --git a/ghostwriter/vulnintel/tests/test_schedule.py b/ghostwriter/vulnintel/tests/test_schedule.py
+new file mode 100644
+index 0000000..81943bc
+--- /dev/null
++++ b/ghostwriter/vulnintel/tests/test_schedule.py
+@@ -0,0 +1,163 @@
++"""Tests for keeping the refresh schedule in step with the configuration, and for the lookup signal."""
++
++# Standard Libraries
++from datetime import datetime, time, timedelta
++from datetime import timezone as dt_timezone
++from unittest import mock
++
++# Django Imports
++from django.core.cache import cache
++from django.test import TestCase, override_settings
++
++# 3rd Party Libraries
++from django_q.models import Schedule
++
++# Ghostwriter Libraries
++from ghostwriter.factories import FindingFactory, ReportFindingLinkFactory
++from ghostwriter.home.django_q_policy import validate_schedule
++from ghostwriter.vulnintel.models import EpssScore, VulnIntelConfiguration
++from ghostwriter.vulnintel.schedule import SCHEDULE_NAME, first_run, get_refresh_schedule, sync_schedule
++from ghostwriter.vulnintel.tasks import LOOKUP_TASK, REFRESH_TASK
++
++UTC = dt_timezone.utc
++NOW = datetime(2026, 11, 22, 15, 0, tzinfo=UTC)
++
++
++def configure(**fields):
++    config = VulnIntelConfiguration.get_solo()
++    for name, value in fields.items():
++        setattr(config, name, value)
++    config.save()
++    return config
++
++
++class FirstRunTests(TestCase):
++    def test_daily_runs_at_the_next_run_time(self):
++        self.assertEqual(first_run(NOW, time(14, 0), timedelta(days=1)), datetime(2026, 11, 23, 14, 0, tzinfo=UTC))
++        self.assertEqual(first_run(NOW, time(16, 30), timedelta(days=1)), datetime(2026, 11, 22, 16, 30, tzinfo=UTC))
++
++    def test_intervals_follow_the_run_time_grid(self):
++        self.assertEqual(first_run(NOW, time(14, 0), timedelta(hours=6)), datetime(2026, 11, 22, 20, 0, tzinfo=UTC))
++        self.assertEqual(first_run(NOW, time(2, 0), timedelta(hours=12)), datetime(2026, 11, 23, 2, 0, tzinfo=UTC))
++
++    def test_accepts_other_time_zones(self):
++        eastern = dt_timezone(timedelta(hours=-5))
++        self.assertEqual(
++            first_run(datetime(2026, 11, 22, 10, 0, tzinfo=eastern), time(14, 0), timedelta(days=1)),
++            datetime(2026, 11, 22, 14, 0, tzinfo=UTC) + timedelta(days=1),
++        )
++
++
++class SyncScheduleTests(TestCase):
++    def test_no_schedule_until_a_source_is_enabled(self):
++        configure()
++        self.assertIsNone(get_refresh_schedule())
++
++    def test_saving_settings_creates_a_valid_daily_schedule(self):
++        configure(enable_kev=True, run_at=time(14, 0))
++        schedule = get_refresh_schedule()
++        self.assertEqual(schedule.name, SCHEDULE_NAME)
++        self.assertEqual(schedule.func, REFRESH_TASK)
++        self.assertEqual(schedule.schedule_type, Schedule.DAILY)
++        self.assertEqual(schedule.repeats, -1)
++        self.assertEqual(schedule.next_run.astimezone(UTC).time(), time(14, 0))
++        # The server's Django Q policy accepts it
++        validate_schedule(schedule)
++
++    def test_frequencies(self):
++        expected = {
++            VulnIntelConfiguration.FREQUENCY_6_HOURS: (Schedule.MINUTES, 360),
++            VulnIntelConfiguration.FREQUENCY_12_HOURS: (Schedule.MINUTES, 720),
++            VulnIntelConfiguration.FREQUENCY_DAILY: (Schedule.DAILY, None),
++            VulnIntelConfiguration.FREQUENCY_WEEKLY: (Schedule.WEEKLY, None),
++        }
++        for frequency, (schedule_type, minutes) in expected.items():
++            with self.subTest(frequency=frequency):
++                configure(enable_epss=True, update_frequency=frequency)
++                schedule = get_refresh_schedule()
++                self.assertEqual((schedule.schedule_type, schedule.minutes), (schedule_type, minutes))
++        self.assertEqual(Schedule.objects.filter(func=REFRESH_TASK).count(), 1)
++
++    def test_disabling_removes_the_schedule(self):
++        configure(enable_kev=True)
++        configure(update_frequency=VulnIntelConfiguration.FREQUENCY_DISABLED)
++        self.assertIsNone(get_refresh_schedule())
++        configure(update_frequency=VulnIntelConfiguration.FREQUENCY_DAILY)
++        self.assertIsNotNone(get_refresh_schedule())
++        configure(enable_kev=False)
++        self.assertIsNone(get_refresh_schedule())
++
++    def test_status_updates_leave_the_schedule_alone(self):
++        config = configure(enable_kev=True)
++        schedule = get_refresh_schedule()
++        Schedule.objects.filter(pk=schedule.pk).update(minutes=99)
++        config.kev_count = 5
++        config.save(update_fields=["kev_count"])
++        self.assertEqual(get_refresh_schedule().minutes, 99)
++
++    def test_restores_and_deduplicates(self):
++        config = configure(enable_kev=True)
++        Schedule.objects.filter(func=REFRESH_TASK).delete()
++        self.assertIsNotNone(sync_schedule(config, now=NOW))
++        Schedule.objects.create(func=REFRESH_TASK, name="Duplicate", schedule_type=Schedule.HOURLY)
++        sync_schedule(config, now=NOW)
++        self.assertEqual(Schedule.objects.filter(func=REFRESH_TASK).count(), 1)
++        self.assertEqual(get_refresh_schedule().next_run, datetime(2026, 11, 23, 14, 0, tzinfo=UTC))
++
++    def test_no_schedule_when_the_policy_omits_the_task(self):
++        configure(enable_kev=True)
++        with override_settings(GHOSTWRITER_DJANGO_Q_SCHEDULE_TASKS={}):
++            self.assertIsNone(sync_schedule())
++        self.assertIsNone(get_refresh_schedule())
++
++
++@mock.patch("ghostwriter.vulnintel.signals.async_task")
++class LookupSignalTests(TestCase):
++    def setUp(self):
++        cache.clear()
++
++    def test_queues_lookup_for_unscored_cves(self, async_task):
++        configure(enable_epss=True)
++        EpssScore.objects.create(cve_id="CVE-2014-0160", epss="0.5", percentile="0.5", score_date="2026-11-01")
++        with self.captureOnCommitCallbacks(execute=True):
++            FindingFactory(cves=["CVE-2021-44228", "CVE-2014-0160"])
++        async_task.assert_called_once_with(LOOKUP_TASK, ["CVE-2021-44228"])
++
++    def test_report_findings_queue_lookups_too(self, async_task):
++        configure(enable_epss=True)
++        with self.captureOnCommitCallbacks(execute=True):
++            ReportFindingLinkFactory(cves=["CVE-2023-4966"])
++        async_task.assert_called_once_with(LOOKUP_TASK, ["CVE-2023-4966"])
++
++    def test_no_lookup_when_disabled_or_nothing_new(self, async_task):
++        configure(enable_epss=False)
++        with self.captureOnCommitCallbacks(execute=True):
++            FindingFactory(cves=["CVE-2021-44228"])
++        configure(enable_epss=True)
++        EpssScore.objects.create(cve_id="CVE-2021-44228", epss="0.9", percentile="0.9", score_date="2026-11-01")
++        with self.captureOnCommitCallbacks(execute=True):
++            FindingFactory(cves=["CVE-2021-44228"])
++            FindingFactory()
++        async_task.assert_not_called()
++
++    def test_repeated_saves_queue_one_lookup(self, async_task):
++        configure(enable_epss=True)
++        finding = FindingFactory()
++        for _ in range(3):
++            finding.cves = ["CVE-2021-44228"]
++            with self.captureOnCommitCallbacks(execute=True):
++                finding.save()
++        async_task.assert_called_once_with(LOOKUP_TASK, ["CVE-2021-44228"])
++
++    def test_queue_failure_does_not_break_the_save(self, async_task):
++        configure(enable_epss=True)
++        async_task.side_effect = ConnectionError("broker unavailable")
++        with self.captureOnCommitCallbacks(execute=True):
++            finding = FindingFactory(cves=["CVE-2021-44228"])
++        finding.refresh_from_db()
++        self.assertEqual(finding.cves, ["CVE-2021-44228"])
++        # The failed CVE ID can be queued again by the next save
++        async_task.side_effect = None
++        with self.captureOnCommitCallbacks(execute=True):
++            finding.save()
++        self.assertEqual(async_task.call_count, 3)
+diff --git a/ghostwriter/vulnintel/tests/test_tasks.py b/ghostwriter/vulnintel/tests/test_tasks.py
+new file mode 100644
+index 0000000..564a7f6
+--- /dev/null
++++ b/ghostwriter/vulnintel/tests/test_tasks.py
+@@ -0,0 +1,262 @@
++"""Tests for the jobs that refresh the KEV catalog and EPSS scores."""
++
++# Standard Libraries
++from datetime import date, datetime, timezone
++from unittest import mock
++
++# Django Imports
++from django.test import TestCase
++
++# Ghostwriter Libraries
++from ghostwriter.factories import FindingFactory, ReportFindingLinkFactory
++from ghostwriter.vulnintel import feeds
++from ghostwriter.vulnintel.feeds import FeedError
++from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability, VulnIntelConfiguration
++from ghostwriter.vulnintel.tasks import (
++    lookup_epss_scores,
++    referenced_cves,
++    refresh_epss,
++    refresh_kev,
++    refresh_vulnerability_intel,
++)
++from ghostwriter.vulnintel.tests.fixtures import epss_api_document, epss_document, kev_document, kev_entry
++
++DOWNLOAD = "ghostwriter.vulnintel.tasks.download"
++
++
++def configure(**fields):
++    config = VulnIntelConfiguration.get_solo()
++    for name, value in fields.items():
++        setattr(config, name, value)
++    config.save()
++    return config
++
++
++@mock.patch.object(feeds, "MIN_KEV_ENTRIES", 2)
++class RefreshKevTests(TestCase):
++    def test_stores_catalog_and_status(self):
++        config = configure(enable_kev=True)
++        summary = refresh_kev(
++            config,
++            kev_document([kev_entry("CVE-2021-44228", knownRansomwareCampaignUse="Known"), kev_entry("CVE-2014-0160")]),
++        )
++        self.assertIn("2 entries, 2 new, 0 removed", summary)
++        log4shell = KnownExploitedVulnerability.objects.get(cve_id="CVE-2021-44228")
++        self.assertTrue(log4shell.known_ransomware)
++        self.assertEqual(log4shell.due_date, date(2026, 11, 22))
++        config.refresh_from_db()
++        self.assertEqual(config.kev_catalog_version, "2026.11.20")
++        self.assertEqual(config.kev_count, 2)
++        self.assertIsNotNone(config.kev_synced_at)
++
++    def test_updates_entries_and_marks_removed_ones(self):
++        config = configure(enable_kev=True)
++        refresh_kev(config, kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")]))
++        summary = refresh_kev(
++            config,
++            kev_document(
++                [kev_entry("CVE-2021-44228", dueDate="2026-12-01"), kev_entry("CVE-2023-4966")],
++                version="2026.11.21",
++                released="2026-11-21T10:00:00Z",
++            ),
++        )
++        self.assertIn("2 entries, 1 new, 1 removed", summary)
++        self.assertEqual(KnownExploitedVulnerability.objects.get(cve_id="CVE-2021-44228").due_date, date(2026, 12, 1))
++        removed = KnownExploitedVulnerability.objects.get(cve_id="CVE-2014-0160")
++        self.assertIsNotNone(removed.removed_on)
++
++        # An entry CISA restores loses its removal date
++        refresh_kev(
++            config,
++            kev_document(
++                [kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")],
++                version="2026.11.22",
++                released="2026-11-22T10:00:00Z",
++            ),
++        )
++        removed.refresh_from_db()
++        self.assertIsNone(removed.removed_on)
++
++    def test_refuses_older_catalog(self):
++        config = configure(enable_kev=True)
++        refresh_kev(config, kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")]))
++        with self.assertRaisesMessage(FeedError, "older than the stored copy"):
++            refresh_kev(
++                config,
++                kev_document([kev_entry("CVE-2023-4966"), kev_entry("CVE-2014-0160")], released="2026-01-01T00:00:00Z"),
++            )
++        self.assertFalse(KnownExploitedVulnerability.objects.filter(cve_id="CVE-2023-4966").exists())
++
++    def test_bad_download_keeps_stored_data(self):
++        config = configure(enable_kev=True)
++        refresh_kev(config, kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")]))
++        with self.assertRaises(FeedError):
++            refresh_kev(config, kev_document([kev_entry("CVE-2023-4966")]))
++        self.assertEqual(KnownExploitedVulnerability.objects.filter(removed_on__isnull=True).count(), 2)
++
++    @mock.patch(DOWNLOAD)
++    def test_downloads_from_configured_feed(self, download):
++        download.return_value = kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")])
++        config = configure(enable_kev=True, kev_feed_url="https://mirror.example.com/kev.json", request_timeout=30)
++        refresh_kev(config)
++        download.assert_called_once_with("https://mirror.example.com/kev.json", 30, config.max_download_bytes)
++
++
++@mock.patch.object(feeds, "MIN_EPSS_ROWS", 3)
++class RefreshEpssTests(TestCase):
++    rows = [
++        ("CVE-1999-0001", "0.04753", "0.92097"),
++        ("CVE-2014-0160", "0.99999", "0.99997"),
++        ("CVE-2021-44228", "0.99999", "1.00000"),
++    ]
++
++    def setUp(self):
++        FindingFactory(cves=["CVE-2021-44228", "CVE-2099-0001"])
++        ReportFindingLinkFactory(cves=["CVE-2014-0160"])
++
++    def test_referenced_cves(self):
++        self.assertEqual(referenced_cves(), {"CVE-2021-44228", "CVE-2099-0001", "CVE-2014-0160"})
++
++    def test_stores_scores_for_referenced_cves_only(self):
++        config = configure(enable_epss=True)
++        summary = refresh_epss(config, epss_document(self.rows))
++        self.assertIn("2 scores stored, 1 CVE IDs not in the file", summary)
++        self.assertEqual(set(EpssScore.objects.values_list("cve_id", flat=True)), {"CVE-2021-44228", "CVE-2014-0160"})
++        score = EpssScore.objects.get(cve_id="CVE-2021-44228")
++        self.assertEqual(score.epss, 0.99999)
++        self.assertEqual(score.score_date, date(2026, 11, 22))
++        self.assertEqual(score.model_version, "v2026.06.15")
++        config.refresh_from_db()
++        self.assertEqual(config.epss_score_date, date(2026, 11, 22))
++        self.assertEqual(config.epss_count, 2)
++
++    def test_drops_scores_no_finding_references(self):
++        config = configure(enable_epss=True)
++        EpssScore.objects.create(cve_id="CVE-2010-0001", epss="0.1", percentile="0.5", score_date=date(2026, 11, 1))
++        summary = refresh_epss(config, epss_document(self.rows))
++        self.assertIn("1 no longer referenced", summary)
++        self.assertFalse(EpssScore.objects.filter(cve_id="CVE-2010-0001").exists())
++
++    def test_refuses_older_scores(self):
++        config = configure(enable_epss=True)
++        refresh_epss(config, epss_document(self.rows, score_date="2026-11-22"))
++        with self.assertRaisesMessage(FeedError, "older than the stored ones"):
++            refresh_epss(config, epss_document([(c, "0.1", "0.1") for c, _, _ in self.rows], score_date="2026-11-01"))
++        self.assertEqual(EpssScore.objects.get(cve_id="CVE-2021-44228").epss, 0.99999)
++
++    @mock.patch(DOWNLOAD)
++    def test_skips_download_when_no_cves_are_referenced(self, download):
++        from ghostwriter.reporting.models import Finding, ReportFindingLink
++
++        Finding.objects.update(cves=[])
++        ReportFindingLink.objects.update(cves=[])
++        config = configure(enable_epss=True)
++        self.assertIn("nothing was downloaded", refresh_epss(config))
++        download.assert_not_called()
++
++
++@mock.patch.object(feeds, "MIN_KEV_ENTRIES", 2)
++@mock.patch.object(feeds, "MIN_EPSS_ROWS", 1)
++class RefreshVulnerabilityIntelTests(TestCase):
++    def setUp(self):
++        FindingFactory(cves=["CVE-2021-44228"])
++
++    @mock.patch(DOWNLOAD)
++    def test_does_nothing_when_disabled(self, download):
++        configure(enable_kev=False, enable_epss=False)
++        self.assertIn("both disabled", refresh_vulnerability_intel())
++        download.assert_not_called()
++
++    @mock.patch(DOWNLOAD)
++    def test_refreshes_enabled_sources(self, download):
++        kev = kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")])
++        epss = epss_document([("CVE-2021-44228", "0.9", "0.99")])
++        download.side_effect = lambda url, *args: kev if "known_exploited" in url else epss
++        configure(enable_kev=True, enable_epss=True)
++        summary = refresh_vulnerability_intel()
++        self.assertIn("KEV 2026.11.20", summary)
++        self.assertIn("EPSS 2026-11-22", summary)
++        config = VulnIntelConfiguration.objects.get()
++        self.assertEqual(config.last_error, "")
++        self.assertIsNotNone(config.last_run_at)
++
++    @mock.patch(DOWNLOAD)
++    def test_one_failing_source_does_not_stop_the_other(self, download):
++        epss = epss_document([("CVE-2021-44228", "0.9", "0.99")])
++
++        def fake(url, *args):
++            if "known_exploited" in url:
++                raise FeedError("Could not download the KEV catalog")
++            return epss
++
++        download.side_effect = fake
++        configure(enable_kev=True, enable_epss=True)
++        summary = refresh_vulnerability_intel()
++        self.assertIn("EPSS 2026-11-22", summary)
++        self.assertIn("KEV: Could not download", summary)
++        self.assertTrue(EpssScore.objects.filter(cve_id="CVE-2021-44228").exists())
++        self.assertIn("KEV: Could not download", VulnIntelConfiguration.objects.get().last_error)
++
++    @mock.patch(DOWNLOAD)
++    def test_fails_the_task_when_every_source_fails(self, download):
++        download.side_effect = FeedError("unreachable")
++        configure(enable_kev=True, enable_epss=False)
++        with self.assertRaisesMessage(RuntimeError, "KEV: unreachable"):
++            refresh_vulnerability_intel()
++        self.assertEqual(VulnIntelConfiguration.objects.get().last_error, "KEV: unreachable")
++
++    @mock.patch(DOWNLOAD)
++    def test_status_writes_keep_settings_saved_meanwhile(self, download):
++        download.return_value = kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")])
++        config = configure(enable_kev=True)
++        # An admin changes a setting while the refresh holds an older copy of the configuration
++        VulnIntelConfiguration.objects.filter(pk=config.pk).update(request_timeout=120)
++        with mock.patch.object(VulnIntelConfiguration, "get_solo", return_value=config):
++            refresh_vulnerability_intel()
++        self.assertEqual(VulnIntelConfiguration.objects.get().request_timeout, 120)
++
++
++class LookupEpssScoresTests(TestCase):
++    @mock.patch(DOWNLOAD)
++    def test_does_nothing_when_disabled(self, download):
++        configure(enable_epss=False)
++        self.assertEqual(lookup_epss_scores(["CVE-2021-44228"]), "EPSS is disabled")
++        download.assert_not_called()
++
++    @mock.patch(DOWNLOAD)
++    def test_looks_up_only_unscored_cves(self, download):
++        configure(enable_epss=True, epss_api_url="https://api.example.com/epss")
++        EpssScore.objects.create(cve_id="CVE-2014-0160", epss="0.5", percentile="0.5", score_date=date(2026, 11, 1))
++        download.return_value = epss_api_document([("CVE-2021-44228", "0.99999", "1.0", "2026-11-22")])
++        summary = lookup_epss_scores(["cve-2021-44228", "CVE-2014-0160", "Log4Shell"])
++        self.assertEqual(summary, "EPSS lookup: 1 of 1 CVE IDs scored")
++        url = download.call_args[0][0]
++        self.assertTrue(url.startswith("https://api.example.com/epss?cve="))
++        self.assertIn("CVE-2021-44228", url)
++        self.assertNotIn("CVE-2014-0160", url)
++        self.assertEqual(EpssScore.objects.get(cve_id="CVE-2014-0160").epss, 0.5)
++        self.assertEqual(EpssScore.objects.get(cve_id="CVE-2021-44228").score_date, date(2026, 11, 22))
++
++    @mock.patch("ghostwriter.vulnintel.tasks.EPSS_API_BATCH", 2)
++    @mock.patch(DOWNLOAD)
++    def test_batches_requests(self, download):
++        configure(enable_epss=True)
++        download.return_value = epss_api_document([])
++        lookup_epss_scores([f"CVE-2020-{n:04d}" for n in range(1, 6)])
++        self.assertEqual(download.call_count, 3)
++
++    @mock.patch(DOWNLOAD)
++    def test_nothing_to_do(self, download):
++        configure(enable_epss=True)
++        EpssScore.objects.create(cve_id="CVE-2014-0160", epss="0.5", percentile="0.5", score_date=date(2026, 11, 1))
++        self.assertEqual(lookup_epss_scores(["CVE-2014-0160"]), "Every CVE ID already has a score")
++        download.assert_not_called()
++
++
++class StatusDatesTests(TestCase):
++    @mock.patch.object(feeds, "MIN_KEV_ENTRIES", 2)
++    def test_catalog_release_time_is_stored_in_utc(self):
++        config = configure(enable_kev=True)
++        refresh_kev(config, kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")]))
++        config.refresh_from_db()
++        self.assertEqual(config.kev_released_at, datetime(2026, 11, 20, 17, 48, 39, 151600, tzinfo=timezone.utc))
 diff --git a/hasura-docker/metadata/databases/default/tables/public_reporting_finding.yaml b/hasura-docker/metadata/databases/default/tables/public_reporting_finding.yaml
 index 0606cd4..5d1295e 100644
 --- a/hasura-docker/metadata/databases/default/tables/public_reporting_finding.yaml
@@ -4668,6 +7074,116 @@ index 0d95225..c1670f9 100644
          - description
          - extra_fields
          - finding_guidance
+diff --git a/hasura-docker/metadata/databases/default/tables/public_vulnintel_epssscore.yaml b/hasura-docker/metadata/databases/default/tables/public_vulnintel_epssscore.yaml
+new file mode 100644
+index 0000000..bafa382
+--- /dev/null
++++ b/hasura-docker/metadata/databases/default/tables/public_vulnintel_epssscore.yaml
+@@ -0,0 +1,35 @@
++table:
++  name: vulnintel_epssscore
++  schema: public
++configuration:
++  column_config: {}
++  custom_column_names:
++    cve_id: cveId
++    model_version: modelVersion
++    score_date: scoreDate
++    updated_at: updatedAt
++  custom_name: epssScore
++  custom_root_fields: {}
++select_permissions:
++  - role: manager
++    permission:
++      columns:
++        - id
++        - cve_id
++        - epss
++        - percentile
++        - score_date
++        - model_version
++        - updated_at
++      filter: {}
++  - role: user
++    permission:
++      columns:
++        - id
++        - cve_id
++        - epss
++        - percentile
++        - score_date
++        - model_version
++        - updated_at
++      filter: {}
+diff --git a/hasura-docker/metadata/databases/default/tables/public_vulnintel_knownexploitedvulnerability.yaml b/hasura-docker/metadata/databases/default/tables/public_vulnintel_knownexploitedvulnerability.yaml
+new file mode 100644
+index 0000000..61a3302
+--- /dev/null
++++ b/hasura-docker/metadata/databases/default/tables/public_vulnintel_knownexploitedvulnerability.yaml
+@@ -0,0 +1,53 @@
++table:
++  name: vulnintel_knownexploitedvulnerability
++  schema: public
++configuration:
++  column_config: {}
++  custom_column_names:
++    cve_id: cveId
++    date_added: dateAdded
++    due_date: dueDate
++    known_ransomware: knownRansomware
++    removed_on: removedOn
++    required_action: requiredAction
++    short_description: shortDescription
++    updated_at: updatedAt
++  custom_name: knownExploitedVulnerability
++  custom_root_fields: {}
++select_permissions:
++  - role: manager
++    permission:
++      columns:
++        - id
++        - cve_id
++        - vendor
++        - product
++        - name
++        - date_added
++        - due_date
++        - known_ransomware
++        - short_description
++        - required_action
++        - notes
++        - cwes
++        - removed_on
++        - updated_at
++      filter: {}
++  - role: user
++    permission:
++      columns:
++        - id
++        - cve_id
++        - vendor
++        - product
++        - name
++        - date_added
++        - due_date
++        - known_ransomware
++        - short_description
++        - required_action
++        - notes
++        - cwes
++        - removed_on
++        - updated_at
++      filter: {}
+diff --git a/hasura-docker/metadata/databases/default/tables/tables.yaml b/hasura-docker/metadata/databases/default/tables/tables.yaml
+index 1471672..ce39546 100644
+--- a/hasura-docker/metadata/databases/default/tables/tables.yaml
++++ b/hasura-docker/metadata/databases/default/tables/tables.yaml
+@@ -71,3 +71,5 @@
+ - "!include public_users_user.yaml"
+ - "!include public_users_user_groups.yaml"
+ - "!include public_users_user_user_permissions.yaml"
++- "!include public_vulnintel_epssscore.yaml"
++- "!include public_vulnintel_knownexploitedvulnerability.yaml"
 diff --git a/javascript/src/__generated__/gql.ts b/javascript/src/__generated__/gql.ts
 index 0a83d85..4e817a7 100644
 --- a/javascript/src/__generated__/gql.ts

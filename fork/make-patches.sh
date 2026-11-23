@@ -3,8 +3,8 @@
 #
 # Usage: fork/make-patches.sh [--combined-only] <upstream-tag> [output-dir]
 #
-# Cherry-picks the fork's own commits (those on HEAD that are not merges and not in the upstream tag)
-# onto a clean copy of the tag, then writes one numbered patch per commit, a combined patch, and
+# Applies the fork's own commits (those on HEAD that are not merges and not in the upstream tag) to a
+# clean copy of the tag, one at a time, then writes one numbered patch per commit, a combined patch, and
 # SHA256SUMS. Changes to fork/ and README.md stay out of the patches. Fails if a commit no longer
 # applies, so a broken patch is caught here rather than by users.
 #
@@ -63,13 +63,16 @@ else
     rmdir "$work"
     git -C "$root" worktree add --quiet --detach "$work" "$base"
 
+    # Apply each commit without its fork/ and README.md changes (which may build on fork-only
+    # commits), then commit it with the original message, author, and date
     for commit in "${commits[@]}"; do
-        if ! git -C "$work" cherry-pick --allow-empty "$commit" >/dev/null 2>&1; then
+        if ! git diff --binary "$commit^" "$commit" -- . "${excludes[@]}" |
+            git -C "$work" apply --index --3way --whitespace=nowarn - >/dev/null 2>&1; then
             echo "Commit $(git log -1 --format='%h %s' "$commit") does not apply cleanly to $tag" >&2
             echo "If HEAD has merged $tag, rerun with --combined-only" >&2
-            git -C "$work" cherry-pick --abort >/dev/null 2>&1 || true
             exit 1
         fi
+        git -C "$work" commit --quiet --allow-empty --no-verify -C "$commit"
     done
 
     rm -rf "$out"

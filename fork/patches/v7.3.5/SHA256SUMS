@@ -1,3 +1,4 @@
-ebbd9d2a6982b926ae36dd2875919e45034f3a51437498a5764ad740eb3edfee  0001-Fixed-defects-in-the-default-report-templates-and-ex.patch
-16de54c9f4c263011e2047fad77389cbb265b608189cf53bf42f55727a70abad  0002-Added-CVE-IDs-to-library-and-report-findings.patch
-88897b5a3237d1fb2fdf52a33e9983cb8145b41b7795558b191722cc953445f8  ghostwriter-7.3.5-benheise.patch
+004e6b3f81501d2f194afd5747d8833388a557492436fd2cc50cb73b167cb45d  0001-Fixed-defects-in-the-default-report-templates-and-ex.patch
+c0d438823e512f6a28ea53366e94d945c9edffed2de4fd524aca3400f89f3860  0002-Added-CVE-IDs-to-library-and-report-findings.patch
+4417c3350f3b3d35208e287681f1f8f8a8b950ac426d21e0b479bd084c5c0b7c  0003-Added-a-scheduled-local-copy-of-the-CISA-KEV-catalog.patch
+d90034a551c66c47b6c72183b496728efba6533ceeb0d606db7cba08bcfbda18  ghostwriter-7.3.5-benheise.patch
