@@ -60,6 +60,7 @@ class VulnIntelLookupTests(TestCase):
         self.assertEqual(context["kev_cves"], ["CVE-2021-44228", "CVE-2021-45046"])
         self.assertTrue(context["kev_ransomware"])
         self.assertEqual(context["kev_due_date"], "2021-12-24")
+        self.assertEqual(context["kev_due_date_iso"], "2021-12-24")
         self.assertEqual(context["epss_max"], 0.99999)
         self.assertEqual(context["epss_max_percentile"], 1.0)
         self.assertEqual(context["epss_max_cve"], "CVE-2021-44228")
@@ -73,9 +74,25 @@ class VulnIntelLookupTests(TestCase):
         self.assertEqual(log4shell["kev"]["due_date"], "2021-12-24")
         self.assertEqual(log4shell["kev"]["required_action"], "Apply updates per vendor instructions.")
         self.assertEqual(
-            log4shell["epss"], {"score": 0.99999, "percentile": 1.0, "score_date": "2026-11-22", "model_version": ""}
+            log4shell["epss"],
+            {
+                "score": 0.99999,
+                "percentile": 1.0,
+                "score_date": "2026-11-22",
+                "score_date_iso": "2026-11-22",
+                "model_version": "",
+            },
         )
         self.assertEqual(unknown, {"cve": "CVE-2099-0001", "kev": None, "epss": None})
+
+    @override_settings(DATE_FORMAT="d/m/Y")
+    def test_iso_dates_whatever_the_display_format(self):
+        context = VulnIntelLookup(["CVE-2021-44228"], threshold=0.1).finding_context(["CVE-2021-44228"])
+        self.assertEqual(context["kev_due_date"], "24/12/2021")
+        self.assertEqual(context["kev_due_date_iso"], "2021-12-24")
+        kev = context["vuln_intel"][0]["kev"]
+        self.assertEqual((kev["date_added_iso"], kev["due_date_iso"]), ("2021-12-10", "2021-12-24"))
+        self.assertEqual(context["vuln_intel"][0]["epss"]["score_date_iso"], "2026-11-22")
 
     def test_finding_without_data(self):
         context = VulnIntelLookup(["CVE-2023-0001"], threshold=0.1).finding_context(["CVE-2023-0001"])
@@ -128,6 +145,7 @@ class ReportDataTests(TestCase):
                 "kev_released": "",
                 "kev_updated": "",
                 "epss_score_date": "2026-11-22",
+                "epss_score_date_iso": "2026-11-22",
                 "epss_model_version": "v2026.06.15",
                 "epss_threshold": 0.1,
             },

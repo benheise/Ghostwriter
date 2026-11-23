@@ -47,3 +47,7 @@ docker compose -f production.yml run --rm django python manage.py extract_cves
 ```
 
 By default, the command updates the findings library and findings attached to reports. Add `--library-only` or `--reports-only` to limit it to one of them, and `--verbosity 2` to list each finding it changes. Upgrades never run the command for you.
+
+<Warning>
+The command adds every CVE ID a finding's text mentions, including CVE IDs cited only as examples. A finding about vulnerable VPN appliances may name a dozen well-known CVEs that a given client doesn't have, and once they are in **CVE IDs**, reports show their KEV status and EPSS scores as if they were present. Run with `--dry-run --verbosity 2` first, and skip libraries whose findings cite example CVEs, such as Sibylline's class findings, which set **CVE IDs** themselves.
+</Warning>

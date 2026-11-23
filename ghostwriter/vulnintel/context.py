@@ -14,6 +14,11 @@ def format_date(value):
     return dateformat.format(value, settings.DATE_FORMAT) if value else ""
 
 
+def iso_date(value):
+    """Return a date as ``YYYY-MM-DD``, which templates can compare as text, or an empty string."""
+    return value.isoformat()[:10] if value else ""
+
+
 class VulnIntelLookup:
     """The stored KEV entries and EPSS scores for a set of CVE IDs, fetched with two queries."""
 
@@ -74,6 +79,7 @@ class VulnIntelLookup:
             "kev_cves": [entry.cve_id for entry in facts["kev_entries"]],
             "kev_ransomware": any(entry.known_ransomware for entry in facts["kev_entries"]),
             "kev_due_date": format_date(facts["earliest_due"]),
+            "kev_due_date_iso": iso_date(facts["earliest_due"]),
             "epss_max": top.epss if top else None,
             "epss_max_percentile": top.percentile if top else None,
             "epss_max_cve": top.cve_id if top else "",
@@ -89,7 +95,9 @@ def kev_context(entry):
         "product": entry.product,
         "name": entry.name,
         "date_added": format_date(entry.date_added),
+        "date_added_iso": iso_date(entry.date_added),
         "due_date": format_date(entry.due_date),
+        "due_date_iso": iso_date(entry.due_date),
         "known_ransomware": entry.known_ransomware,
         "short_description": entry.short_description,
         "required_action": entry.required_action,
@@ -105,6 +113,7 @@ def epss_context(score):
         "score": score.epss,
         "percentile": score.percentile,
         "score_date": format_date(score.score_date),
+        "score_date_iso": iso_date(score.score_date),
         "model_version": score.model_version,
     }
 
@@ -135,6 +144,7 @@ def add_report_vuln_intel(rep):
         "kev_released": format_date(config.kev_released_at),
         "kev_updated": format_date(config.kev_synced_at),
         "epss_score_date": format_date(config.epss_score_date),
+        "epss_score_date_iso": iso_date(config.epss_score_date),
         "epss_model_version": config.epss_model_version,
         "epss_threshold": config.epss_threshold,
     }
