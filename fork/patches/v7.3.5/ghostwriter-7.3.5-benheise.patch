@@ -1,5 +1,5 @@
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index cf25d45..2e1c094 100644
+index cf25d45..fa5ef9b 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
 @@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
@@ -24,7 +24,7 @@ index cf25d45..2e1c094 100644
 +* Added KEV and EPSS data for each finding's CVE IDs to reports and finding pages
 +  * Report templates get `finding.kev`, `kev_cves`, `kev_due_date`, `kev_ransomware`, `epss_max`, `epss_max_percentile`, `epss_max_cve`, `epss_over_threshold`, and a per-CVE `vuln_intel` list, plus a report-level `vuln_intel` with the dates the data was current and three new `totals`; the template linter knows them all
 +  * The Excel report adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS, and EPSS Percentile columns
-+  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge and the highest EPSS score per finding
++  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge (plus a Ransomware badge when CISA records ransomware use) and the highest EPSS score per finding; in the report findings table they sit beside the CVSS score rather than after the title
 +  * A new EPSS threshold setting (10% by default) highlights high scores and sets `totals.findings_epss_over`
 +  * Every KEV and EPSS date also comes in `YYYY-MM-DD` form, in a key ending in `_iso` (such as `finding.kev_due_date_iso`), so templates can compare dates whatever the server's date format
 +
@@ -4194,7 +4194,7 @@ zby7dRyC4IA>MZ~u{>=mczz-P$gP}sGew~FMFN?5FR0t6&03f47U{k0NieFcMB=s-|
 z+K-b0VnTp_%j&NV{r7a~PiS8IgZ{7N=_>p0PmDi-9DxUcrJ_N&(H;|g_v-yG&UDJ&
 
 diff --git a/ghostwriter/reporting/templates/snippets/report_findings_table.html b/ghostwriter/reporting/templates/snippets/report_findings_table.html
-index 142eb9a..b44241b 100644
+index 142eb9a..1fd0ded 100644
 --- a/ghostwriter/reporting/templates/snippets/report_findings_table.html
 +++ b/ghostwriter/reporting/templates/snippets/report_findings_table.html
 @@ -1,6 +1,7 @@
@@ -4206,14 +4206,23 @@ index 142eb9a..b44241b 100644
    <div class="table-responsive data-table-frame findings-table-frame">
      <table id="findings-table" class="table table-sm report-items-table report-findings-table"
             findings-update-url="{% url 'reporting:update_report_findings' %}">
-@@ -62,6 +63,7 @@
-                    data-bs-toggle="tooltip" data-bs-placement="top"
-                    title="Started as a blank finding rather than a library template"></i>
+@@ -64,6 +65,7 @@
                {% endif %}
-+              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
              </td>
              <td class="align-middle text-start">
++              <div class="report-score-stack">
                {% if finding.cvss_score %}
+                 <span class="report-score-badge
+                   {% if finding.severity.weight == 1 %}cvss-critical
+@@ -76,6 +78,8 @@
+                   title="{{ finding.cvss_vector }}"
+                 >{{ finding.cvss_score }}</span>
+               {% else %}<span class="missing-value">Not scored</span>{% endif %}
++              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
++              </div>
+             </td>
+             {% if finding.assigned_to == request.user %}
+               <td class="align-middle text-start">
 diff --git a/ghostwriter/reporting/tests/test_cves.py b/ghostwriter/reporting/tests/test_cves.py
 new file mode 100644
 index 0000000..e502af8
@@ -4866,6 +4875,49 @@ index 79d3cf2..08c183f 100644
              extra_fields=finding.extra_fields,
  
              assigned_to=self.request.user,
+diff --git a/ghostwriter/static/css/design_system.css b/ghostwriter/static/css/design_system.css
+index e7e1946..72c1d5e 100644
+--- a/ghostwriter/static/css/design_system.css
++++ b/ghostwriter/static/css/design_system.css
+@@ -13496,3 +13496,38 @@ a.report-item-title {
+     transform: none;
+   }
+ }
++
++/* benheise/Ghostwriter: KEV and EPSS badges beside the CVSS score in the report findings table. Each badge wraps
++   on its own, so a long set takes a second line under the score rather than running into the next column. */
++.report-findings-table .report-score-column {
++  width: 14rem;
++}
++
++.report-score-stack {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.3rem;
++  align-items: center;
++  min-width: 0;
++}
++
++.report-score-stack .finding-intel-summary {
++  display: contents;
++}
++
++@container findings-table (max-width: 66.999rem) {
++  .report-findings-table .report-item-row {
++    grid-template-columns: 2.25rem auto minmax(5.5rem, 1fr) auto;
++  }
++}
++
++/* On narrow screens the owner joins the status line, so the score line has the full width for its badges */
++@container findings-table (max-width: 34rem) {
++  .report-findings-table .report-item-row {
++    grid-template-areas:
++      "drag title actions"
++      "drag status owner"
++      "drag score score";
++    grid-template-columns: 2.25rem minmax(0, 1fr) auto;
++  }
++}
 diff --git a/ghostwriter/vulnintel/__init__.py b/ghostwriter/vulnintel/__init__.py
 new file mode 100644
 index 0000000..e69de29
@@ -6573,10 +6625,10 @@ new file mode 100644
 index 0000000..e69de29
 diff --git a/ghostwriter/vulnintel/templatetags/vulnintel_tags.py b/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
 new file mode 100644
-index 0000000..c21b0f0
+index 0000000..aa46780
 --- /dev/null
 +++ b/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,125 @@
 +"""Template tags that show KEV and EPSS data next to findings' CVE IDs."""
 +
 +# Django Imports
@@ -6677,11 +6729,19 @@ index 0000000..c21b0f0
 +        badges.append(
 +            format_html(
 +                '<span class="library-tag library-tag-warning finding-kev-badge" data-bs-toggle="tooltip" '
-+                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>{}</span></span>',
++                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>KEV</span></span>',
 +                title,
-+                "KEV · Ransomware" if ransomware else "KEV",
 +            )
 +        )
++        if ransomware:
++            # A badge of its own, so the badges stay short enough to wrap beside a CVSS score
++            badges.append(
++                format_html(
++                    '<span class="library-tag library-tag-danger finding-ransomware-badge" data-bs-toggle="tooltip" '
++                    'title="{}"><span>Ransomware</span></span>',
++                    "Known use in ransomware campaigns, according to CISA's KEV catalog",
++                )
++            )
 +    if top:
 +        title = f"Highest score among this finding's CVE IDs ({top.cve_id}). {_epss_title(top, lookup)}"
 +        badges.append(
@@ -6935,10 +6995,10 @@ index 0000000..48d7312
 +                call_command("refresh_vuln_intel")
 diff --git a/ghostwriter/vulnintel/tests/test_context.py b/ghostwriter/vulnintel/tests/test_context.py
 new file mode 100644
-index 0000000..2e1fe16
+index 0000000..013b028
 --- /dev/null
 +++ b/ghostwriter/vulnintel/tests/test_context.py
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,249 @@
 +"""Tests for KEV and EPSS data in the report data, the template linter, and pages."""
 +
 +# Standard Libraries
@@ -7163,7 +7223,8 @@ index 0000000..2e1fe16
 +        FindingFactory(title="Low EPSS finding", cves=["CVE-2023-0001"])
 +        response = self.client.get(reverse("reporting:findings"))
 +        self.assertEqual(response.status_code, 200)
-+        self.assertContains(response, "KEV · Ransomware")
++        self.assertContains(response, "finding-kev-badge")
++        self.assertContains(response, "<span>Ransomware</span>")
 +        self.assertContains(response, "EPSS 2.0%")
 +
 +    def test_report_findings_table_summarises_each_finding(self):

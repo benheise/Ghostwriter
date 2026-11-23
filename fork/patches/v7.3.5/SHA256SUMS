@@ -1,6 +1,7 @@
-414c89cc67358b89bbf2d9f6b3a36808219e7a91f8c8c1649c69afc0e5ddb88d  0001-Fixed-defects-in-the-default-report-templates-and-ex.patch
-3fc0d014206e4edc6e0da5365d724eb5bf2c0b28a3e9706f5b8f7044196f9d1f  0002-Added-CVE-IDs-to-library-and-report-findings.patch
-e787e56641d95ef39a69ddae8c36e56165e062cb37902e72617fee2c0fc97fff  0003-Added-a-scheduled-local-copy-of-the-CISA-KEV-catalog.patch
-b975de5b21fbec53b75bcb9497561fb356d288b42c2f590fde9bdcb56e4b1ef4  0004-Added-KEV-and-EPSS-data-to-reports-and-finding-pages.patch
-9a2862b3dd423de16e531c2c120dededf236cdfbdb3f3a245e56cd75a1ede07b  0005-Added-ISO-dates-to-the-KEV-and-EPSS-report-keys.patch
-b3dc5c0b64593305d9f0f896c283a25d6114126e98ccf3ce4649b32ac94f873f  ghostwriter-7.3.5-benheise.patch
+51df1c75c29b24a2ca478a4f5245e4b1cf8413ef82035a3c92af1827c2c061ce  0001-Fixed-defects-in-the-default-report-templates-and-ex.patch
+b2c04b8fa50964a1e9064bcdff5a08a7270c31f7967ba9a7de862400ebea7885  0002-Added-CVE-IDs-to-library-and-report-findings.patch
+4dcde12277446d19d9a8b4cb7ed4b5e388f6f522e7a445858b26a58baa7d1d1c  0003-Added-a-scheduled-local-copy-of-the-CISA-KEV-catalog.patch
+bf00c60a6b67ec1860dd69b0717b56a79c94275b65d0421ee2917ddd0d0a5975  0004-Added-KEV-and-EPSS-data-to-reports-and-finding-pages.patch
+001c5d9eef18ad488311ab8b872538ae864878a99f5b8be0adccea6d1da18ebb  0005-Added-ISO-dates-to-the-KEV-and-EPSS-report-keys.patch
+38f4d2c547f8cf757571c59226445311e0cf4be257bc70a00dc6a7113cae53b4  0006-Moved-KEV-and-EPSS-badges-beside-the-CVSS-score-in-t.patch
+751802c04127c0030c801b657900810b2e60f24fc0e28728250d9a2580c8d2e4  ghostwriter-7.3.5-benheise.patch

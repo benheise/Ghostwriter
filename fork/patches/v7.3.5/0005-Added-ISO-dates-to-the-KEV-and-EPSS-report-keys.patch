@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Mon, 23 Nov 2026 02:58:38 +0000
-Subject: [PATCH 5/5] Added ISO dates to the KEV and EPSS report keys
+Subject: [PATCH 5/6] Added ISO dates to the KEV and EPSS report keys
 
 Report templates can compare kev_due_date_iso, due_date_iso, date_added_iso and
 score_date_iso as text whatever the server's DATE_FORMAT is. The docs for

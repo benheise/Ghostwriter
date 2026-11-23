@@ -1,0 +1,142 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 23 Nov 2026 03:46:17 +0000
+Subject: [PATCH 6/6] Moved KEV and EPSS badges beside the CVSS score in the
+ report findings table
+
+After the title they made long titles hard to read. They now share the CVSS
+cell, which is wider on desktop, and wrap badge by badge; in the narrower card
+layouts they sit on the line under the title with the score. On the narrowest
+screens the owner moves up beside the status so the badges have the line to
+themselves. Ransomware use is now a badge of its own, so the badges stay short.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JeRCvM2shAtegxe489Vfvx
+---
+ CHANGELOG.md                                  |  2 +-
+ .../snippets/report_findings_table.html       |  4 ++-
+ ghostwriter/static/css/design_system.css      | 35 +++++++++++++++++++
+ .../vulnintel/templatetags/vulnintel_tags.py  | 12 +++++--
+ ghostwriter/vulnintel/tests/test_context.py   |  3 +-
+ 5 files changed, 51 insertions(+), 5 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 2e1c094..fa5ef9b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ * Added KEV and EPSS data for each finding's CVE IDs to reports and finding pages
+   * Report templates get `finding.kev`, `kev_cves`, `kev_due_date`, `kev_ransomware`, `epss_max`, `epss_max_percentile`, `epss_max_cve`, `epss_over_threshold`, and a per-CVE `vuln_intel` list, plus a report-level `vuln_intel` with the dates the data was current and three new `totals`; the template linter knows them all
+   * The Excel report adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS, and EPSS Percentile columns
+-  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge and the highest EPSS score per finding
++  * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge (plus a Ransomware badge when CISA records ransomware use) and the highest EPSS score per finding; in the report findings table they sit beside the CVSS score rather than after the title
+   * A new EPSS threshold setting (10% by default) highlights high scores and sets `totals.findings_epss_over`
+   * Every KEV and EPSS date also comes in `YYYY-MM-DD` form, in a key ending in `_iso` (such as `finding.kev_due_date_iso`), so templates can compare dates whatever the server's date format
+ 
+diff --git a/ghostwriter/reporting/templates/snippets/report_findings_table.html b/ghostwriter/reporting/templates/snippets/report_findings_table.html
+index b44241b..1fd0ded 100644
+--- a/ghostwriter/reporting/templates/snippets/report_findings_table.html
++++ b/ghostwriter/reporting/templates/snippets/report_findings_table.html
+@@ -63,9 +63,9 @@
+                    data-bs-toggle="tooltip" data-bs-placement="top"
+                    title="Started as a blank finding rather than a library template"></i>
+               {% endif %}
+-              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
+             </td>
+             <td class="align-middle text-start">
++              <div class="report-score-stack">
+               {% if finding.cvss_score %}
+                 <span class="report-score-badge
+                   {% if finding.severity.weight == 1 %}cvss-critical
+@@ -78,6 +78,8 @@
+                   title="{{ finding.cvss_vector }}"
+                 >{{ finding.cvss_score }}</span>
+               {% else %}<span class="missing-value">Not scored</span>{% endif %}
++              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
++              </div>
+             </td>
+             {% if finding.assigned_to == request.user %}
+               <td class="align-middle text-start">
+diff --git a/ghostwriter/static/css/design_system.css b/ghostwriter/static/css/design_system.css
+index e7e1946..72c1d5e 100644
+--- a/ghostwriter/static/css/design_system.css
++++ b/ghostwriter/static/css/design_system.css
+@@ -13496,3 +13496,38 @@ a.report-item-title {
+     transform: none;
+   }
+ }
++
++/* benheise/Ghostwriter: KEV and EPSS badges beside the CVSS score in the report findings table. Each badge wraps
++   on its own, so a long set takes a second line under the score rather than running into the next column. */
++.report-findings-table .report-score-column {
++  width: 14rem;
++}
++
++.report-score-stack {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.3rem;
++  align-items: center;
++  min-width: 0;
++}
++
++.report-score-stack .finding-intel-summary {
++  display: contents;
++}
++
++@container findings-table (max-width: 66.999rem) {
++  .report-findings-table .report-item-row {
++    grid-template-columns: 2.25rem auto minmax(5.5rem, 1fr) auto;
++  }
++}
++
++/* On narrow screens the owner joins the status line, so the score line has the full width for its badges */
++@container findings-table (max-width: 34rem) {
++  .report-findings-table .report-item-row {
++    grid-template-areas:
++      "drag title actions"
++      "drag status owner"
++      "drag score score";
++    grid-template-columns: 2.25rem minmax(0, 1fr) auto;
++  }
++}
+diff --git a/ghostwriter/vulnintel/templatetags/vulnintel_tags.py b/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
+index c21b0f0..aa46780 100644
+--- a/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
++++ b/ghostwriter/vulnintel/templatetags/vulnintel_tags.py
+@@ -98,11 +98,19 @@ def finding_intel_summary(cves, lookup):
+         badges.append(
+             format_html(
+                 '<span class="library-tag library-tag-warning finding-kev-badge" data-bs-toggle="tooltip" '
+-                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>{}</span></span>',
++                'title="{}"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> <span>KEV</span></span>',
+                 title,
+-                "KEV · Ransomware" if ransomware else "KEV",
+             )
+         )
++        if ransomware:
++            # A badge of its own, so the badges stay short enough to wrap beside a CVSS score
++            badges.append(
++                format_html(
++                    '<span class="library-tag library-tag-danger finding-ransomware-badge" data-bs-toggle="tooltip" '
++                    'title="{}"><span>Ransomware</span></span>',
++                    "Known use in ransomware campaigns, according to CISA's KEV catalog",
++                )
++            )
+     if top:
+         title = f"Highest score among this finding's CVE IDs ({top.cve_id}). {_epss_title(top, lookup)}"
+         badges.append(
+diff --git a/ghostwriter/vulnintel/tests/test_context.py b/ghostwriter/vulnintel/tests/test_context.py
+index 2e1fe16..013b028 100644
+--- a/ghostwriter/vulnintel/tests/test_context.py
++++ b/ghostwriter/vulnintel/tests/test_context.py
+@@ -222,7 +222,8 @@ class PageTests(TestCase):
+         FindingFactory(title="Low EPSS finding", cves=["CVE-2023-0001"])
+         response = self.client.get(reverse("reporting:findings"))
+         self.assertEqual(response.status_code, 200)
+-        self.assertContains(response, "KEV · Ransomware")
++        self.assertContains(response, "finding-kev-badge")
++        self.assertContains(response, "<span>Ransomware</span>")
+         self.assertContains(response, "EPSS 2.0%")
+ 
+     def test_report_findings_table_summarises_each_finding(self):

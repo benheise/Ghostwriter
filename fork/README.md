@@ -19,6 +19,7 @@ Every change ships two ways:
 | KEV and EPSS data | `0003` | A local copy of the CISA KEV catalog and FIRST EPSS scores, off by default. The new Vulnerability Intelligence Configuration page sets the update frequency (every 6 or 12 hours, daily, weekly, or manual) and run time, and manages the Django Q schedule. Downloads are checked so bad data never replaces good data. Includes offline import commands and read-only admin and GraphQL access. See `DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx` |
 | KEV and EPSS in reports and pages | `0004` | Each finding's KEV and EPSS data in report templates (`finding.kev`, `finding.epss_max`, a per-CVE `finding.vuln_intel` list and more), report-level "as of" dates and totals, five Excel columns, and KEV/EPSS badges on finding pages, the findings library and report findings tables. A new EPSS threshold setting highlights high scores |
 | ISO dates for KEV and EPSS | `0005` | `_iso` copies of the KEV and EPSS dates (`finding.kev_due_date_iso` and others) that templates can compare as text whatever `DATE_FORMAT` is, and a warning in the `extract_cves` docs about example CVE IDs |
+| KEV and EPSS badges by the CVSS score | `0006` | In the report findings table the KEV and EPSS badges sit beside the CVSS score (on the line under the title in the narrower layouts) instead of after the title, and ransomware use is a badge of its own |
 
 Planned: freezing each finding's KEV and EPSS values when a report is marked complete, so a delivered report regenerates identically.
 

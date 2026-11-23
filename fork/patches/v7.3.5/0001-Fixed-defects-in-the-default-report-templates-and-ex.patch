@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Benjamin Heise <heise.benjamin@gmail.com>
 Date: Mon, 9 Nov 2026 03:27:00 +0000
-Subject: [PATCH 1/5] Fixed defects in the default report templates and exports
+Subject: [PATCH 1/6] Fixed defects in the default report templates and exports
 
 - The default Word template printed `{{ finding.severity_rt }}` without the
   rich-text `r` prefix, so the severity under each finding was blank.
