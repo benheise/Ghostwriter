@@ -16,9 +16,9 @@ Every change ships two ways:
 |--------|-------|---------|
 | Default template and export fixes | `0001` | Blank severity under each finding in the default Word template, default download filenames missing the project type, Word footnote styles not being applied (and the related export failure), and the PowerPoint notes title |
 | CVE IDs on findings | `0002` | A validated `cves` list on library and report findings. It is copied with findings, edited in the collaborative forms, and available as `finding.cves` in templates. It also appears in the JSON and Excel reports, CSV imports and exports, GraphQL, and the findings library filters. The `extract_cves` command fills it from text already in findings |
+| KEV and EPSS data | `0003` | A local copy of the CISA KEV catalog and FIRST EPSS scores, off by default. The new Vulnerability Intelligence Configuration page sets the update frequency (every 6 or 12 hours, daily, weekly, or manual) and run time, and manages the Django Q schedule. Downloads are checked so bad data never replaces good data. Includes offline import commands and read-only admin and GraphQL access. See `DOCS/configuring-global-settings/configuring-vulnerability-intelligence.mdx` |
 
-Planned: a local copy of the CISA KEV catalogue and FIRST EPSS scores, refreshed on a configurable schedule, with KEV
-and EPSS values for each finding's CVEs in the report data.
+Planned: KEV and EPSS values for each finding's CVEs in the report data, the Excel export, and the finding pages.
 
 The [CHANGELOG](../CHANGELOG.md) lists every change under its release.
 

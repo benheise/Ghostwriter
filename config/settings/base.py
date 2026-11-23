@@ -125,6 +125,7 @@ LOCAL_APPS = [
     "ghostwriter.singleton.apps.SingletonConfig",
     "ghostwriter.api.apps.ApiConfig",
     "ghostwriter.status.apps.StatusConfig",
+    "ghostwriter.vulnintel.apps.VulnIntelConfig",
 ]
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
@@ -549,6 +550,14 @@ GHOSTWRITER_DJANGO_Q_SCHEDULE_TASKS = {
         # Bound monitoring work and avoid displacing useful successful-job history.
         "q_options": {"timeout": 30, "save": False, "ack_failure": True},
     },
+    "ghostwriter.vulnintel.tasks.refresh_vulnerability_intel": {
+        "label": "Refresh Vulnerability Intelligence (KEV and EPSS)",
+        "args": [],
+        "kwargs": {},
+        # A missed refresh is replaced by the next one; running several late ones adds nothing.
+        "catch_up": False,
+        "q_options": {"timeout": 900},
+    },
 }
 
 # These tasks are queued by Ghostwriter itself. They are accepted by the queue
@@ -560,6 +569,8 @@ GHOSTWRITER_DJANGO_Q_INTERNAL_TASKS = {
     "ghostwriter.shepherd.tasks.test_namecheap": {"allow_any_arguments": True},
     "ghostwriter.shepherd.tasks.test_slack_webhook": {"allow_any_arguments": True},
     "ghostwriter.shepherd.tasks.test_virustotal": {"allow_any_arguments": True},
+    # Validates its own argument: a list of CVE IDs, cleaned before use
+    "ghostwriter.vulnintel.tasks.lookup_epss_scores": {"allow_any_arguments": True},
 }
 
 # Hooks have their own execution path in Django Q and must be independently

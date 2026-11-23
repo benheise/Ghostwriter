@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * The IDs are available to report templates as `finding.cves`, in the JSON and Excel reports, in finding CSV imports and exports as a `cves` column, and through the GraphQL API
   * The findings library can be filtered and searched by CVE ID, shows the IDs on finding pages, and offers a hidden-by-default CVE IDs table column
   * The new `extract_cves` management command fills the field from CVE identifiers already written in findings' text
+* Added a local copy of the CISA KEV catalog and FIRST EPSS scores, refreshed on a schedule you set
+  * Both sources are off by default; the new Vulnerability Intelligence Configuration page enables them and sets the update frequency (every 6 or 12 hours, daily, weekly, or manual) and the time of day
+  * Saving the configuration creates, changes, or removes the Django Q schedule for the refresh, and the page shows the next run, the last results, and a Refresh Now button
+  * The whole KEV catalog is kept, with removed entries marked; EPSS scores are kept for the CVE IDs findings reference, and a CVE ID newly added to a finding is looked up through FIRST's API
+  * Downloads are checked for size, shape, and age, so a failed or truncated download never replaces stored data
+  * The `import_kev` and `import_epss` management commands load offline copies, and `refresh_vuln_intel` runs a refresh from the command line
+  * The data is available read-only in the admin panel and through GraphQL (`knownExploitedVulnerability` and `epssScore`) for the user and manager roles
 
 ### Fixed
 

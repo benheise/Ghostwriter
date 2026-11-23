@@ -71,3 +71,5 @@
 - "!include public_users_user.yaml"
 - "!include public_users_user_groups.yaml"
 - "!include public_users_user_user_permissions.yaml"
+- "!include public_vulnintel_epssscore.yaml"
+- "!include public_vulnintel_knownexploitedvulnerability.yaml"
