@@ -57,6 +57,16 @@ class VulnIntelConfigurationAdmin(SingletonModelAdmin):
             },
         ),
         (
+            "Reports",
+            {
+                "description": (
+                    "Report templates get each finding's KEV and EPSS data. See the report template variables "
+                    "documentation for the names."
+                ),
+                "fields": ("epss_threshold",),
+            },
+        ),
+        (
             "Feeds and Limits",
             {
                 "description": "Change the URLs only to point at an internal mirror of the same data.",

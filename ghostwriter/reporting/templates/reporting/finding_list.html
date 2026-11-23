@@ -1,5 +1,5 @@
 {% extends "base_generic.html" %}
-{% load crispy_forms_tags bleach_tags custom_tags static %}
+{% load crispy_forms_tags bleach_tags custom_tags static vulnintel_tags %}
 
 {% block pagetitle %}Findings Library{% endblock %}
 
@@ -92,6 +92,7 @@
               </tr>
             </thead>
             <tbody class="list">
+              {% vuln_intel_for filter.qs as vuln_intel %}
               {% for finding in filter.qs %}
                 <tr>
                   <td class="align-middle text-start" data-label="Severity">
@@ -131,6 +132,7 @@
                   </td>
                   <td class="align-middle text-start" data-label="CVE IDs">
                     {% for cve in finding.cve_ids %}<code class="finding-cve-id d-block">{{ cve }}</code>{% empty %}<span class="text-muted">Not set</span>{% endfor %}
+                    {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
                   </td>
                   <td class="align-middle text-start" data-label="Tags">
                     {% for tag in finding.tags.all %}

@@ -53,6 +53,7 @@ class ConfigurationAdminTests(TestCase):
                 "epss_api_url": "https://api.first.org/data/v1/epss",
                 "request_timeout": 60,
                 "max_download_mb": 100,
+                "epss_threshold": 0.1,
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -71,6 +72,7 @@ class ConfigurationAdminTests(TestCase):
                 "epss_api_url": "https://api.first.org/data/v1/epss",
                 "request_timeout": 60,
                 "max_download_mb": 100,
+                "epss_threshold": 0.1,
             },
         )
         self.assertEqual(response.status_code, 200)

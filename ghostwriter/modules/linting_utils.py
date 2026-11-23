@@ -1,5 +1,13 @@
 """This contains utilities and values used by template linting."""
 
+# Standard Libraries
+import copy
+
+# Ghostwriter Libraries
+from ghostwriter.vulnintel.samples import SAMPLE_FINDING as VULN_INTEL_SAMPLE_FINDING
+from ghostwriter.vulnintel.samples import SAMPLE_REPORT as VULN_INTEL_SAMPLE_REPORT
+from ghostwriter.vulnintel.samples import SAMPLE_TOTALS as VULN_INTEL_SAMPLE_TOTALS
+
 # Example JSON reporting data for loading into templates for rendering tests
 LINTER_CONTEXT = {
     "report_date": "Mar. 25, 2021",
@@ -588,3 +596,8 @@ LINTER_CONTEXT = {
         "findings": [],
     }
 }
+
+# KEV and EPSS keys added by ``ghostwriter.vulnintel.context.add_report_vuln_intel``
+LINTER_CONTEXT["findings"][0].update(copy.deepcopy(VULN_INTEL_SAMPLE_FINDING))
+LINTER_CONTEXT["vuln_intel"] = copy.deepcopy(VULN_INTEL_SAMPLE_REPORT)
+LINTER_CONTEXT["totals"].update(VULN_INTEL_SAMPLE_TOTALS)

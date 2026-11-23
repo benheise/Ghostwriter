@@ -39,6 +39,7 @@ from ghostwriter.reporting.models import (
     Severity,
 )
 from ghostwriter.reporting.validators import clean_cves
+from ghostwriter.vulnintel.context import add_report_vuln_intel
 from ghostwriter.rolodex.models import (
     Client,
     ClientContact,
@@ -1050,6 +1051,9 @@ class ReportDataSerializer(CustomModelSerializer):
         rep["totals"]["scope"] = total_scope_lines
         rep["totals"]["team"] = total_team
         rep["totals"]["targets"] = total_targets
+
+        # KEV and EPSS data for each finding's CVE IDs, with report-level dates and totals
+        add_report_vuln_intel(rep)
 
         return rep
 

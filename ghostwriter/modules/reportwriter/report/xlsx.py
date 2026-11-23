@@ -8,6 +8,7 @@ from xlsxwriter.utility import xl_col_to_name
 from ghostwriter.modules.reportwriter.base.xlsx import ExportXlsxBase
 from ghostwriter.modules.reportwriter.report.base import ExportReportBase
 from ghostwriter.reporting.models import Finding
+from ghostwriter.vulnintel import xlsx as vuln_intel_xlsx
 
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,8 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
                 severity_formats[color] = severity_format
             return severity_formats[color]
 
+        vuln_intel_formats = {}
+
         # Create a format for everything else
         wrap_format = xlsx_doc.add_format()
         wrap_format.set_text_wrap()
@@ -135,6 +138,7 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
             "CVSS Score",
             "CVSS Vector",
             "CVE IDs",
+            *vuln_intel_xlsx.HEADERS,
             "Affected Entities",
             "Description",
             "Impact",
@@ -208,6 +212,7 @@ class ExportReportXlsx(ExportXlsxBase, ExportReportBase):
             col += 1
             worksheet.write_string(row, col, ", ".join(finding.get("cves") or []), wrap_format)
             col += 1
+            col = vuln_intel_xlsx.write_cells(xlsx_doc, worksheet, row, col, finding, wrap_format, vuln_intel_formats)
 
             # Affected Entities
             if finding["affected_entities"]:

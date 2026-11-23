@@ -1,0 +1,20 @@
+{% load vulnintel_tags %}{% for row in rows %}
+  <span class="library-tag library-tag-neutral finding-cve-badge" title="CVE ID">
+    <i class="fas fa-bug" aria-hidden="true"></i>
+    <span>{{ row.cve }}</span>
+  </span>
+  {% if row.kev %}
+    <span class="library-tag library-tag-warning finding-kev-badge" data-bs-toggle="tooltip" title="{{ row.kev_title }}">
+      <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+      <span>KEV</span>
+      <span class="visually-hidden">: {{ row.kev_title }}</span>
+    </span>
+  {% endif %}
+  {% if row.epss %}
+    <span class="library-tag {% if row.epss_high %}library-tag-warning{% else %}library-tag-neutral{% endif %} finding-epss-badge"
+          data-bs-toggle="tooltip" title="{{ row.epss_title }}">
+      <span>EPSS {{ row.epss.epss|percent }}</span>
+      <span class="visually-hidden">: {{ row.epss_title }}</span>
+    </span>
+  {% endif %}
+{% endfor %}

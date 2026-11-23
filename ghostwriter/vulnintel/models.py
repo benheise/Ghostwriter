@@ -106,6 +106,15 @@ class VulnIntelConfiguration(SingletonModel):
         validators=[MinValueValidator(5), MaxValueValidator(600)],
         help_text="Give up on a download that takes longer than this",
     )
+    epss_threshold = models.FloatField(
+        "EPSS Threshold",
+        default=0.1,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+        help_text=(
+            "Findings whose highest EPSS score is at or above this value (0.1 means 10%) are flagged in reports "
+            "and pages, and counted in totals.findings_epss_over"
+        ),
+    )
     max_download_mb = models.PositiveIntegerField(
         "Maximum Download Size (MB)",
         default=100,

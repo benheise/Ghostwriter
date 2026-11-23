@@ -84,8 +84,8 @@ def _parse_datetime(value):
     if not value:
         return None
     text = str(value).strip().replace("Z", "+00:00")
-    # Python wants at most six digits of fractional seconds
-    text = re.sub(r"(\.\d{6})\d+", r"\1", text)
+    # Older Pythons accept only exactly six digits of fractional seconds (CISA publishes four)
+    text = re.sub(r"\.(\d+)", lambda match: "." + match.group(1)[:6].ljust(6, "0"), text, count=1)
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:

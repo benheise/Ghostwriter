@@ -86,6 +86,18 @@ class ParseKevTests(SimpleTestCase):
             with self.assertRaises(FeedError):
                 parse_kev(data)
 
+    def test_release_dates_with_any_fraction_length(self):
+        for released, microsecond in (
+            ("2026-11-20T17:48:39.1516Z", 151600),
+            ("2026-11-20T17:48:39.1Z", 100000),
+            ("2026-11-20T17:48:39.12345678Z", 123456),
+            ("2026-11-20T17:48:39Z", 0),
+        ):
+            catalog = parse_kev(
+                kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")], released=released)
+            )
+            self.assertEqual(catalog.released_at, datetime(2026, 11, 20, 17, 48, 39, microsecond, tzinfo=timezone.utc))
+
     def test_tolerates_missing_release_date(self):
         catalog = parse_kev(
             kev_document([kev_entry("CVE-2021-44228"), kev_entry("CVE-2014-0160")], released="not a date")

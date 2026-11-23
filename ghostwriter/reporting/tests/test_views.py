@@ -5952,6 +5952,11 @@ class GenerateReportTests(TestCase):
             "CVSS Score",
             "CVSS Vector",
             "CVE IDs",
+            "KEV",
+            "KEV Due Date",
+            "Known Ransomware Use",
+            "Highest EPSS",
+            "EPSS Percentile",
             "Affected Entities",
             "Description",
             "Impact",
@@ -5987,6 +5992,44 @@ class GenerateReportTests(TestCase):
         self.assertEqual(
             finding_row[headers.index("CVE IDs")], "CVE-2021-44228, CVE-2021-45046"
         )
+
+    def test_view_xlsx_includes_kev_and_epss(self):
+        # Standard Libraries
+        from datetime import date
+
+        # Ghostwriter Libraries
+        from ghostwriter.vulnintel.models import EpssScore, KnownExploitedVulnerability
+
+        KnownExploitedVulnerability.objects.create(
+            cve_id="CVE-2021-44228", due_date=date(2021, 12, 24), known_ransomware=True
+        )
+        EpssScore.objects.create(
+            cve_id="CVE-2021-44228", epss=0.97, percentile=0.999, score_date=date(2026, 11, 22)
+        )
+        finding = ReportFindingLinkFactory(
+            report=self.report, title="Finding on KEV", cves=["CVE-2021-44228"]
+        )
+        response = self.client_mgr.get(self.xlsx_uri)
+        self.assertEqual(response.status_code, 200, response.content)
+
+        rows = self._xlsx_rows(response)
+        headers = rows[0]
+        for header in ("KEV", "KEV Due Date", "Known Ransomware Use", "Highest EPSS", "EPSS Percentile"):
+            self.assertIn(header, headers)
+        self.assertEqual(headers.index("KEV"), headers.index("CVE IDs") + 1)
+        finding_row = next(row for row in rows[1:] if row[0] == finding.title)
+        self.assertEqual(finding_row[headers.index("KEV")], "CVE-2021-44228")
+        self.assertEqual(finding_row[headers.index("Known Ransomware Use")], "Yes")
+        self.assertAlmostEqual(float(finding_row[headers.index("Highest EPSS")]), 0.97)
+        self.assertAlmostEqual(float(finding_row[headers.index("EPSS Percentile")]), 0.999)
+
+    def test_view_json_includes_kev_and_epss(self):
+        response = self.client_mgr.get(self.json_uri)
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIn("vuln_intel", data)
+        self.assertIn("findings_kev", data["totals"])
+        self.assertIn("epss_max", data["findings"][0])
 
     def test_view_xlsx_prepares_supporting_evidence_names_once(self):
         from ghostwriter.reporting.views2 import report as report_views

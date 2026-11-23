@@ -187,6 +187,39 @@ Each finding has a `cves` attribute: a list of the finding's CVE identifiers, so
 
 The Excel report includes the same IDs in a _CVE IDs_ column.
 
+#### Findings Attributes – KEV and EPSS
+
+When an administrator enables [vulnerability intelligence](/configuring-global-settings/configuring-vulnerability-intelligence), each finding also has the stored CISA KEV and FIRST EPSS data for its CVE IDs. Entries CISA has removed from the catalog don't count. Dates use the server's date format, and scores run from 0 to 1.
+
+| Variable | Contents |
+|----------|----------|
+| `finding.kev` | `True` if any of the finding's CVE IDs is in the KEV catalog |
+| `finding.kev_cves` | The finding's CVE IDs that are in the catalog |
+| `finding.kev_due_date` | The earliest remediation due date among them, or an empty string |
+| `finding.kev_ransomware` | `True` if CISA knows any of them to be used in ransomware campaigns |
+| `finding.epss_max` | The highest EPSS score among the finding's CVE IDs, or `None` |
+| `finding.epss_max_percentile` | That score's percentile, or `None` |
+| `finding.epss_max_cve` | The CVE ID with that score |
+| `finding.epss_over_threshold` | `True` if `epss_max` is at or above the EPSS threshold in the configuration |
+| `finding.vuln_intel` | One entry per CVE ID, in the finding's order: `cve`, `kev` (with `date_added`, `due_date`, `known_ransomware`, `vendor`, `product`, `name`, `short_description`, `required_action`, `notes` and `cwes`, or `None`), and `epss` (with `score`, `percentile`, `score_date` and `model_version`, or `None`) |
+
+The report-level `vuln_intel` says how current the data is: `kev_catalog_version`, `kev_released`, `kev_updated`, `epss_score_date`, `epss_model_version` and `epss_threshold`, plus `cves` (every CVE ID in the report) and `kev_cves` (those in the catalog). `totals` gains `findings_kev`, `findings_kev_ransomware` and `findings_epss_over`.
+
+For example, a line under each finding:
+
+```
+{% if finding.kev %}Known exploited (CISA KEV), remediation due {{ finding.kev_due_date }}.{% endif %}
+{% if finding.epss_max is not none %}EPSS {{ "%.1f"|format(finding.epss_max * 100) }}% ({{ finding.epss_max_cve }}).{% endif %}
+```
+
+And a summary sentence, with the date the scores were current:
+
+```
+{{ totals.findings_kev }} of {{ totals.findings }} findings involve known exploited vulnerabilities. EPSS scores as of {{ vuln_intel.epss_score_date }}.
+```
+
+FIRST asks that reports showing EPSS scores credit it (first.org/epss). The template linter knows all of these names, so templates that use them lint cleanly.
+
 ### Ghostwriter Tags
 
 Several tags used for Word documents are not built into Jinja2. These tags are added after you open an expression or statement (before the space).

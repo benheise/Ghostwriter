@@ -1,6 +1,7 @@
-{% load report_tags %}
+{% load report_tags vulnintel_tags %}
 
 {% if report.reportfindinglink_set.exists %}
+  {% vuln_intel_for report.reportfindinglink_set.all as vuln_intel %}
   <div class="table-responsive data-table-frame findings-table-frame">
     <table id="findings-table" class="table table-sm report-items-table report-findings-table"
            findings-update-url="{% url 'reporting:update_report_findings' %}">
@@ -62,6 +63,7 @@
                    data-bs-toggle="tooltip" data-bs-placement="top"
                    title="Started as a blank finding rather than a library template"></i>
               {% endif %}
+              {% if finding.cve_ids %}{% finding_intel_summary finding.cve_ids vuln_intel %}{% endif %}
             </td>
             <td class="align-middle text-start">
               {% if finding.cvss_score %}
