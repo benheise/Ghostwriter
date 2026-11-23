@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Mon, 23 Nov 2026 02:43:55 +0000
-Subject: [PATCH 4/4] Added KEV and EPSS data to reports and finding pages
+Subject: [PATCH 4/5] Added KEV and EPSS data to reports and finding pages
 
 Report data now gives each finding its stored KEV and EPSS facts:
 - kev, kev_cves, kev_due_date and kev_ransomware;

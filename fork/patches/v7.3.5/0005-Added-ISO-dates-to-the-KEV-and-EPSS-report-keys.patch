@@ -1,0 +1,212 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 23 Nov 2026 02:58:38 +0000
+Subject: [PATCH 5/5] Added ISO dates to the KEV and EPSS report keys
+
+Report templates can compare kev_due_date_iso, due_date_iso, date_added_iso and
+score_date_iso as text whatever the server's DATE_FORMAT is. The docs for
+extract_cves now warn that it copies example CVE IDs into findings.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JeRCvM2shAtegxe489Vfvx
+---
+ CHANGELOG.md                                  |  1 +
+ .../populating-the-findings-library.mdx       |  4 ++++
+ .../word-template-variables.mdx               |  8 +++++---
+ ghostwriter/vulnintel/context.py              | 10 ++++++++++
+ ghostwriter/vulnintel/samples.py              |  5 +++++
+ ghostwriter/vulnintel/tests/test_context.py   | 20 ++++++++++++++++++-
+ 6 files changed, 44 insertions(+), 4 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1bb9dbd..2e1c094 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+   * The Excel report adds KEV, KEV Due Date, Known Ransomware Use, Highest EPSS, and EPSS Percentile columns
+   * Library finding pages show a KEV badge and EPSS score for each CVE ID, and the findings library and report findings tables show one KEV badge and the highest EPSS score per finding
+   * A new EPSS threshold setting (10% by default) highlights high scores and sets `totals.findings_epss_over`
++  * Every KEV and EPSS date also comes in `YYYY-MM-DD` form, in a key ending in `_iso` (such as `finding.kev_due_date_iso`), so templates can compare dates whatever the server's date format
+ 
+ ### Fixed
+ 
+diff --git a/DOCS/features/findings-library/populating-the-findings-library.mdx b/DOCS/features/findings-library/populating-the-findings-library.mdx
+index 3335e38..773a8a2 100644
+--- a/DOCS/features/findings-library/populating-the-findings-library.mdx
++++ b/DOCS/features/findings-library/populating-the-findings-library.mdx
+@@ -47,3 +47,7 @@ docker compose -f production.yml run --rm django python manage.py extract_cves
+ ```
+ 
+ By default, the command updates the findings library and findings attached to reports. Add `--library-only` or `--reports-only` to limit it to one of them, and `--verbosity 2` to list each finding it changes. Upgrades never run the command for you.
++
++<Warning>
++The command adds every CVE ID a finding's text mentions, including CVE IDs cited only as examples. A finding about vulnerable VPN appliances may name a dozen well-known CVEs that a given client doesn't have, and once they are in **CVE IDs**, reports show their KEV status and EPSS scores as if they were present. Run with `--dry-run --verbosity 2` first, and skip libraries whose findings cite example CVEs, such as Sibylline's class findings, which set **CVE IDs** themselves.
++</Warning>
+diff --git a/DOCS/features/reporting/report-templates/word-template-variables.mdx b/DOCS/features/reporting/report-templates/word-template-variables.mdx
+index 28c4aa2..8acb913 100644
+--- a/DOCS/features/reporting/report-templates/word-template-variables.mdx
++++ b/DOCS/features/reporting/report-templates/word-template-variables.mdx
+@@ -195,15 +195,15 @@ When an administrator enables [vulnerability intelligence](/configuring-global-s
+ |----------|----------|
+ | `finding.kev` | `True` if any of the finding's CVE IDs is in the KEV catalog |
+ | `finding.kev_cves` | The finding's CVE IDs that are in the catalog |
+-| `finding.kev_due_date` | The earliest remediation due date among them, or an empty string |
++| `finding.kev_due_date` | The earliest remediation due date among them, or an empty string. `finding.kev_due_date_iso` gives the same date as `YYYY-MM-DD` |
+ | `finding.kev_ransomware` | `True` if CISA knows any of them to be used in ransomware campaigns |
+ | `finding.epss_max` | The highest EPSS score among the finding's CVE IDs, or `None` |
+ | `finding.epss_max_percentile` | That score's percentile, or `None` |
+ | `finding.epss_max_cve` | The CVE ID with that score |
+ | `finding.epss_over_threshold` | `True` if `epss_max` is at or above the EPSS threshold in the configuration |
+-| `finding.vuln_intel` | One entry per CVE ID, in the finding's order: `cve`, `kev` (with `date_added`, `due_date`, `known_ransomware`, `vendor`, `product`, `name`, `short_description`, `required_action`, `notes` and `cwes`, or `None`), and `epss` (with `score`, `percentile`, `score_date` and `model_version`, or `None`) |
++| `finding.vuln_intel` | One entry per CVE ID, in the finding's order: `cve`, `kev` (with `date_added`, `due_date`, `known_ransomware`, `vendor`, `product`, `name`, `short_description`, `required_action`, `notes` and `cwes`, or `None`), and `epss` (with `score`, `percentile`, `score_date` and `model_version`, or `None`). Each date also comes as `YYYY-MM-DD` in a key ending in `_iso`, such as `due_date_iso` |
+ 
+-The report-level `vuln_intel` says how current the data is: `kev_catalog_version`, `kev_released`, `kev_updated`, `epss_score_date`, `epss_model_version` and `epss_threshold`, plus `cves` (every CVE ID in the report) and `kev_cves` (those in the catalog). `totals` gains `findings_kev`, `findings_kev_ransomware` and `findings_epss_over`.
++The report-level `vuln_intel` says how current the data is: `kev_catalog_version`, `kev_released`, `kev_updated`, `epss_score_date` (and `epss_score_date_iso`), `epss_model_version` and `epss_threshold`, plus `cves` (every CVE ID in the report) and `kev_cves` (those in the catalog). `totals` gains `findings_kev`, `findings_kev_ransomware` and `findings_epss_over`.
+ 
+ For example, a line under each finding:
+ 
+@@ -218,6 +218,8 @@ And a summary sentence, with the date the scores were current:
+ {{ totals.findings_kev }} of {{ totals.findings }} findings involve known exploited vulnerabilities. EPSS scores as of {{ vuln_intel.epss_score_date }}.
+ ```
+ 
++Dates in the server's display format can't be compared reliably as text; compare the `_iso` versions instead, for example `{% if finding.kev_due_date_iso and finding.kev_due_date_iso < report_date|format_datetime("Y-m-d") %}Overdue{% endif %}`.
++
+ FIRST asks that reports showing EPSS scores credit it (first.org/epss). The template linter knows all of these names, so templates that use them lint cleanly.
+ 
+ ### Ghostwriter Tags
+diff --git a/ghostwriter/vulnintel/context.py b/ghostwriter/vulnintel/context.py
+index f919e48..b7f2967 100644
+--- a/ghostwriter/vulnintel/context.py
++++ b/ghostwriter/vulnintel/context.py
+@@ -14,6 +14,11 @@ def format_date(value):
+     return dateformat.format(value, settings.DATE_FORMAT) if value else ""
+ 
+ 
++def iso_date(value):
++    """Return a date as ``YYYY-MM-DD``, which templates can compare as text, or an empty string."""
++    return value.isoformat()[:10] if value else ""
++
++
+ class VulnIntelLookup:
+     """The stored KEV entries and EPSS scores for a set of CVE IDs, fetched with two queries."""
+ 
+@@ -74,6 +79,7 @@ class VulnIntelLookup:
+             "kev_cves": [entry.cve_id for entry in facts["kev_entries"]],
+             "kev_ransomware": any(entry.known_ransomware for entry in facts["kev_entries"]),
+             "kev_due_date": format_date(facts["earliest_due"]),
++            "kev_due_date_iso": iso_date(facts["earliest_due"]),
+             "epss_max": top.epss if top else None,
+             "epss_max_percentile": top.percentile if top else None,
+             "epss_max_cve": top.cve_id if top else "",
+@@ -89,7 +95,9 @@ def kev_context(entry):
+         "product": entry.product,
+         "name": entry.name,
+         "date_added": format_date(entry.date_added),
++        "date_added_iso": iso_date(entry.date_added),
+         "due_date": format_date(entry.due_date),
++        "due_date_iso": iso_date(entry.due_date),
+         "known_ransomware": entry.known_ransomware,
+         "short_description": entry.short_description,
+         "required_action": entry.required_action,
+@@ -105,6 +113,7 @@ def epss_context(score):
+         "score": score.epss,
+         "percentile": score.percentile,
+         "score_date": format_date(score.score_date),
++        "score_date_iso": iso_date(score.score_date),
+         "model_version": score.model_version,
+     }
+ 
+@@ -135,6 +144,7 @@ def add_report_vuln_intel(rep):
+         "kev_released": format_date(config.kev_released_at),
+         "kev_updated": format_date(config.kev_synced_at),
+         "epss_score_date": format_date(config.epss_score_date),
++        "epss_score_date_iso": iso_date(config.epss_score_date),
+         "epss_model_version": config.epss_model_version,
+         "epss_threshold": config.epss_threshold,
+     }
+diff --git a/ghostwriter/vulnintel/samples.py b/ghostwriter/vulnintel/samples.py
+index a53d614..b0ea210 100644
+--- a/ghostwriter/vulnintel/samples.py
++++ b/ghostwriter/vulnintel/samples.py
+@@ -9,7 +9,9 @@ SAMPLE_FINDING = {
+                 "product": "Log4j2",
+                 "name": "Apache Log4j2 Remote Code Execution Vulnerability",
+                 "date_added": "Dec 10, 2021",
++                "date_added_iso": "2021-12-10",
+                 "due_date": "Dec 24, 2021",
++                "due_date_iso": "2021-12-24",
+                 "known_ransomware": True,
+                 "short_description": "Apache Log4j2 contains a remote code execution vulnerability.",
+                 "required_action": "Apply updates per vendor instructions.",
+@@ -20,6 +22,7 @@ SAMPLE_FINDING = {
+                 "score": 0.99999,
+                 "percentile": 1.0,
+                 "score_date": "Nov 22, 2026",
++                "score_date_iso": "2026-11-22",
+                 "model_version": "v2026.06.15",
+             },
+         }
+@@ -28,6 +31,7 @@ SAMPLE_FINDING = {
+     "kev_cves": ["CVE-2021-44228"],
+     "kev_ransomware": True,
+     "kev_due_date": "Dec 24, 2021",
++    "kev_due_date_iso": "2021-12-24",
+     "epss_max": 0.99999,
+     "epss_max_percentile": 1.0,
+     "epss_max_cve": "CVE-2021-44228",
+@@ -41,6 +45,7 @@ SAMPLE_REPORT = {
+     "kev_released": "Nov 20, 2026",
+     "kev_updated": "Nov 22, 2026",
+     "epss_score_date": "Nov 22, 2026",
++    "epss_score_date_iso": "2026-11-22",
+     "epss_model_version": "v2026.06.15",
+     "epss_threshold": 0.1,
+ }
+diff --git a/ghostwriter/vulnintel/tests/test_context.py b/ghostwriter/vulnintel/tests/test_context.py
+index f6567f0..2e1fe16 100644
+--- a/ghostwriter/vulnintel/tests/test_context.py
++++ b/ghostwriter/vulnintel/tests/test_context.py
+@@ -60,6 +60,7 @@ class VulnIntelLookupTests(TestCase):
+         self.assertEqual(context["kev_cves"], ["CVE-2021-44228", "CVE-2021-45046"])
+         self.assertTrue(context["kev_ransomware"])
+         self.assertEqual(context["kev_due_date"], "2021-12-24")
++        self.assertEqual(context["kev_due_date_iso"], "2021-12-24")
+         self.assertEqual(context["epss_max"], 0.99999)
+         self.assertEqual(context["epss_max_percentile"], 1.0)
+         self.assertEqual(context["epss_max_cve"], "CVE-2021-44228")
+@@ -73,10 +74,26 @@ class VulnIntelLookupTests(TestCase):
+         self.assertEqual(log4shell["kev"]["due_date"], "2021-12-24")
+         self.assertEqual(log4shell["kev"]["required_action"], "Apply updates per vendor instructions.")
+         self.assertEqual(
+-            log4shell["epss"], {"score": 0.99999, "percentile": 1.0, "score_date": "2026-11-22", "model_version": ""}
++            log4shell["epss"],
++            {
++                "score": 0.99999,
++                "percentile": 1.0,
++                "score_date": "2026-11-22",
++                "score_date_iso": "2026-11-22",
++                "model_version": "",
++            },
+         )
+         self.assertEqual(unknown, {"cve": "CVE-2099-0001", "kev": None, "epss": None})
+ 
++    @override_settings(DATE_FORMAT="d/m/Y")
++    def test_iso_dates_whatever_the_display_format(self):
++        context = VulnIntelLookup(["CVE-2021-44228"], threshold=0.1).finding_context(["CVE-2021-44228"])
++        self.assertEqual(context["kev_due_date"], "24/12/2021")
++        self.assertEqual(context["kev_due_date_iso"], "2021-12-24")
++        kev = context["vuln_intel"][0]["kev"]
++        self.assertEqual((kev["date_added_iso"], kev["due_date_iso"]), ("2021-12-10", "2021-12-24"))
++        self.assertEqual(context["vuln_intel"][0]["epss"]["score_date_iso"], "2026-11-22")
++
+     def test_finding_without_data(self):
+         context = VulnIntelLookup(["CVE-2023-0001"], threshold=0.1).finding_context(["CVE-2023-0001"])
+         self.assertFalse(context["kev"])
+@@ -128,6 +145,7 @@ class ReportDataTests(TestCase):
+                 "kev_released": "",
+                 "kev_updated": "",
+                 "epss_score_date": "2026-11-22",
++                "epss_score_date_iso": "2026-11-22",
+                 "epss_model_version": "v2026.06.15",
+                 "epss_threshold": 0.1,
+             },
