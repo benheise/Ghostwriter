@@ -37,7 +37,7 @@ source.
    ```bash
    git clone https://github.com/GhostManager/Ghostwriter.git
    cd Ghostwriter
-   git checkout v7.3.5
+   git checkout v7.3.6
    ```
 
    If you already run Ghostwriter from a clone, use that directory and confirm `cat VERSION` matches the patch set.
@@ -46,13 +46,16 @@ source.
 
    ```bash
    git clone --depth 1 https://github.com/benheise/Ghostwriter.git ../ghostwriter-fork
-   (cd ../ghostwriter-fork/fork/patches/v7.3.5 && sha256sum -c SHA256SUMS)
-   git am --3way ../ghostwriter-fork/fork/patches/v7.3.5/0*.patch
+   (cd ../ghostwriter-fork/fork/patches/v7.3.6 && sha256sum -c SHA256SUMS)
+   git am --3way ../ghostwriter-fork/fork/patches/v7.3.6/0*.patch
    ```
 
    `git am` keeps each change as its own commit. If you don't want commits, `git apply --check` and then `git apply`
    each file in order. These also work in an extracted release archive that isn't a git checkout. The template fix
    modifies binary `.docx` files, so plain `patch` cannot apply `0001`. Use git.
+
+   Some versions (v7.3.6, for one) have only the combined patch, and a `README.txt` that says so. For those, run
+   `git apply --check` and then `git apply` on `ghostwriter-<version>-benheise.patch` instead of `git am`.
 
    Each version's directory also has a single combined patch (`ghostwriter-<version>-benheise.patch`) and the
    `SHA256SUMS` file used above.
