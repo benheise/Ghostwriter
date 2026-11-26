@@ -36,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed template footnote styles never being applied when a Word template names them `footnote text` and `footnote reference`, and report generation failing when a template names the paragraph style `Footnote Text`; the template linter now also describes Footnote Text as a paragraph style
 * Fixed PowerPoint finding notes starting with the literal text `finding["title"]` instead of the finding's title, and a stray comma under the network detection heading
 
+## [7.3.6] - 25 November 2026
+
+### Fixed
+
+* Fixed wide tables in read-only rich text spilling outside descriptions and previews
+  * Table headers now wrap within these containers
+  * Each wide table scrolls independently with keyboard access
+* Gave project descriptions a full-width row when they contain tables and preserved empty table cells in domain and server descriptions
+
+### Security
+
+* Updated Django to 5.2.19 to incorporate upstream security fixes ([Django release notes](https://docs.djangoproject.com/en/5.2/releases/5.2.19/))
+
 ## [7.3.5] - 19 November 2026
 
 ### Fixed
